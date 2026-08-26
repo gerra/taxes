@@ -275,3 +275,79 @@ def test_no_ais_notice_below_the_limit():
 
 def test_no_exempt_notices_without_securities():
     assert build_notices([], None, {"securities": [], "ais_applies": False}, 2026) == []
+
+
+def test_tbill_and_data_notices():
+    exempt = {
+        "securities": [],
+        "ais_applies": False,
+        "tbills": [
+            {
+                "symbol": "GB00BP243M73",
+                "title": "UK T-Bill 15/07/24",
+                "nominal": "3047.95",
+                "cost": "3035.83",
+                "profit": "12.12",
+                "status": "matured",
+                "event_date": "2024-07-15",
+                "in_year": True,
+            },
+            {
+                "symbol": "X",
+                "title": "UK T-Bill 20/05/25",
+                "nominal": "1",
+                "cost": "1",
+                "profit": "0",
+                "status": "open",
+                "event_date": "2025-05-20",
+                "in_year": False,
+            },
+        ],
+    }
+    bundle = {
+        "dividends": [
+            {
+                "date": "2025-02-21",
+                "symbol": "PHP",
+                "country": "GB",
+                "amount_gbp": "108.03",
+                "tax_at_source_gbp": "-16.74",
+            },
+            {
+                "date": "2024-06-26",
+                "symbol": "META",
+                "country": "US",
+                "amount_gbp": "32.26",
+                "tax_at_source_gbp": "-9.68",
+            },
+            {
+                "date": "2025-01-08",
+                "symbol": "LAND",
+                "country": "GB",
+                "amount_gbp": "87.70",
+                "tax_at_source_gbp": "0",
+            },
+        ],
+        "offshore_funds_without_eri": [{"symbol": "VGOV", "isin": "IE00B42WWV65"}],
+        "interest_tax": [
+            {
+                "date": "2024-06-27",
+                "broker": "Charles Schwab",
+                "currency": "USD",
+                "amount_gbp": "0.88",
+            }
+        ],
+    }
+    by_key = {n["key"]: n for n in build_notices([], None, exempt, 2024, bundle)}
+    tb = by_key["tbill_returns"]
+    assert tb["kind"] == "warning" and tb["count"] == 1
+    assert "[[£12.12]]" in tb["summary"]
+    assert "matured [[15 Jul 2024]] → [[£12.12]]" in tb["occurrences"][0]
+    eri = by_key["offshore_eri_missing"]
+    assert eri["occurrences"] == ["[[VGOV]] (IE00B42WWV65)"]
+    pid = by_key["pid_as_dividend__PHP"]
+    assert pid["tax_year"] == 2024
+    assert "[[£16.74]]" in pid["summary"]
+    assert "pid_as_dividend__LAND" not in by_key
+    fx = by_key["foreign_interest_withholding"]
+    assert fx["kind"] == "info" and "[[£0.88]]" in fx["summary"]

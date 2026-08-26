@@ -135,3 +135,75 @@ def test_summary_for_planner_carries_other_income():
     assert s["other_income"] == 80.76
     assert s["other_income_tax"] == 16.13
     assert summary_for_planner(BUNDLE)["other_income"] == 0.0
+
+
+def test_dividends_split_by_isin_country_and_tbill_row():
+    bundle = {
+        **INCOME_BUNDLE,
+        "dividends": [
+            {
+                "date": "2024-06-26",
+                "symbol": "META",
+                "country": "US",
+                "amount_gbp": "700.00",
+                "tax_at_source_gbp": "0",
+                "is_interest": False,
+                "treaty": None,
+            },
+            {
+                "date": "2025-01-08",
+                "symbol": "LAND",
+                "country": "GB",
+                "amount_gbp": "300.00",
+                "tax_at_source_gbp": "0",
+                "is_interest": False,
+                "treaty": None,
+            },
+            {
+                "date": "2025-01-09",
+                "symbol": "VGOV",
+                "country": "IE",
+                "amount_gbp": "100.00",
+                "tax_at_source_gbp": "0",
+                "is_interest": False,
+                "treaty": None,
+            },
+        ],
+        "exempt": {
+            "securities": [],
+            "ais_applies": False,
+            "tbills": [
+                {
+                    "symbol": "A",
+                    "title": "UK T-Bill 15/07/24",
+                    "nominal": "3047.95",
+                    "cost": "3035.83",
+                    "profit": "12.12",
+                    "status": "matured",
+                    "event_date": "2024-07-15",
+                    "in_year": True,
+                },
+                {
+                    "symbol": "B",
+                    "title": "UK T-Bill 20/05/25",
+                    "nominal": "1000",
+                    "cost": "990",
+                    "profit": "10",
+                    "status": "open",
+                    "event_date": "2025-05-20",
+                    "in_year": False,
+                },
+            ],
+        },
+    }
+    view = build_view(bundle, 2024, None)
+    boxes = {(b["form"], b["box"]): b for b in view["sa_boxes"]}
+    assert boxes[("SA100 TR3", "4")]["value"] == 300.0
+    assert "LAND" in boxes[("SA100 TR3", "4")]["explain"]
+    # total 1200 in the bundle totals: 800 foreign lines + 100 not in lines (ERI) → 900
+    assert boxes[("SA106", "dividends")]["value"] == 900.0
+    assert "VGOV" in boxes[("SA106", "dividends")]["explain"]
+    assert boxes[("SA101 Ai1", "3")]["value"] == 12.12
+    assert "1 UK Treasury bill matured" in boxes[("SA101 Ai1", "3")]["explain"]
+    keys = {n["key"] for n in view["notices"]}
+    assert "tbill_returns" in keys

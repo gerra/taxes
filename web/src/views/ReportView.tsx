@@ -394,6 +394,7 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
               <tr>
                 <th>Date</th>
                 <th>Symbol</th>
+                <th>Source</th>
                 <th className="num">Gross (GBP)</th>
                 <th className="num">Withheld</th>
                 <th className="num">Treaty relief</th>
@@ -404,6 +405,9 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
                 <tr key={i}>
                   <td>{shortDate(d.date)}</td>
                   <td>{d.symbol}</td>
+                  <td className="muted">
+                    {d.country === 'GB' ? 'UK' : d.country ? `Foreign (${d.country})` : '—'}
+                  </td>
                   <td className="num">{gbp(d.amount_gbp)}</td>
                   <td className="num">{gbp(d.tax_at_source_gbp)}</td>
                   <td className="num">{d.treaty ? gbp(d.treaty.relief_gbp) : '—'}</td>

@@ -88,3 +88,57 @@ def test_small_gilt_holding_does_not_trigger_ais():
     _, summary = exempt_summary({"tax_year": 2026}, [small], [])
     assert summary["ais_applies"] is False
     assert summary["ais_nominal_peak"] == "4000"
+
+
+def _buy(day, symbol, title, qty, price, isin=None):
+    t = _tx(day, ActionType.BUY, symbol, title, isin or symbol, qty)
+    t.price = Decimal(price)
+    t.amount = -(Decimal(qty) * Decimal(price)).quantize(Decimal("0.01"))
+    return t
+
+
+def test_tbill_returns_reconstruct_redemption_at_par():
+    from engine.worker import tbill_returns
+
+    bills = [
+        {"symbol": "GB00BP243M73", "title": "UK T-Bill 15/07/24", "kind": "tbill"},
+        {"symbol": "GB00BSGNLX88", "title": "UK T-Bill 10/03/25", "kind": "tbill"},
+        {"symbol": "GB00BSGHT927", "title": "UK T-Bill 20/05/25", "kind": "tbill"},
+    ]
+    txs = [
+        _buy("2024-06-14", "GB00BP243M73", "UK T-Bill 15/07/24", "3047.95", "0.99602511"),
+        _buy("2025-02-10", "GB00BSGNLX88", "UK T-Bill 10/03/25", "1000", "0.996"),
+        _tx("2025-03-01", ActionType.SELL, "GB00BSGNLX88", "UK T-Bill 10/03/25", None, "1000"),
+        _buy("2025-04-20", "GB00BSGHT927", "UK T-Bill 20/05/25", "1000", "0.99"),
+    ]
+    txs[2].amount = Decimal("998")
+    by = {t["symbol"]: t for t in tbill_returns(txs, bills, 2024)}
+    matured = by["GB00BP243M73"]
+    assert matured["status"] == "matured"
+    assert matured["maturity"] == "2024-07-15"
+    assert Decimal(matured["cost"]) == Decimal("3035.83")
+    assert Decimal(matured["profit"]) == Decimal("12.12")
+    assert matured["in_year"] is True
+    sold = by["GB00BSGNLX88"]
+    assert sold["status"] == "sold"
+    assert Decimal(sold["profit"]) == Decimal("2.00")
+    assert sold["event_date"] == "2025-03-01" and sold["in_year"] is True
+    # Matures in 2025/26: reported, but not this year's income.
+    assert by["GB00BSGHT927"]["in_year"] is False
+
+
+def test_offshore_funds_without_eri_flags_irish_etfs_held_in_year():
+    from engine.worker import held_in_year, offshore_funds_without_eri
+
+    txs = [
+        _tx("2024-01-10", ActionType.BUY, "VUSC", "S&P 500 UCITS ETF", "IE00BFMXXD54"),
+        _tx("2024-06-10", ActionType.BUY, "VGOV", "UK Gilt UCITS ETF", "IE00B42WWV65"),
+        _tx("2024-06-20", ActionType.SELL, "VGOV", "UK Gilt UCITS ETF", "IE00B42WWV65"),
+        _tx("2023-01-10", ActionType.BUY, "OLD", "Old Fund", "IE00B0000000"),
+        _tx("2023-02-10", ActionType.SELL, "OLD", "Old Fund", "IE00B0000000"),
+        _tx("2024-06-14", ActionType.BUY, "LAND", "Landsec", "GB00BYW0PQ60"),
+    ]
+    assert held_in_year(txs, 2024) == {"VUSC", "VGOV", "LAND"}
+    isins = {t.symbol: t.isin for t in txs}
+    out = offshore_funds_without_eri(txs, isins, {"VUSC"}, 2024)
+    assert out == [{"symbol": "VGOV", "isin": "IE00B42WWV65"}]

@@ -200,6 +200,11 @@ _ACCRUED = re.compile(
     r"(\S+) on (\d{4}-\d{2}-\d{2})"
 )
 AIS_NOMINAL_LIMIT = Decimal(5000)
+# Freetrade names a T-bill by its maturity date: "UK T-Bill 15/07/24".
+_TBILL_DATE = re.compile(r"(\d{2})/(\d{2})/(\d{2,4})")
+# ISIN prefixes of the usual offshore fund domiciles: an ETF or fund registered
+# there is an offshore fund, whose excess reported income is taxable (HS265).
+OFFSHORE_ISIN_PREFIXES = ("IE", "LU", "JE", "GG", "IM", "KY", "BM")
 
 
 def detect_exempt_securities(transactions) -> list[dict]:
@@ -246,6 +251,110 @@ def peak_nominal_held(transactions, symbols: set[str], tax_year: int) -> Decimal
     return peak
 
 
+def _tax_year_bounds(tax_year: int) -> tuple[date, date]:
+    return date(tax_year, 4, 6), date(tax_year + 1, 4, 5)
+
+
+def tbill_returns(transactions, tbills: list[dict], tax_year: int) -> list[dict]:
+    """What each UK T-bill earned and when. A T-bill is bought at a discount and
+    redeemed at £1 per unit on the date in its name; brokers rarely export the
+    redemption, so it is reconstructed from the purchases. The difference is
+    income (a deeply discounted security), not a capital gain. A bill sold
+    before maturity earns its sale proceeds minus cost instead."""
+    from cgt_calc.model import ActionType
+
+    start, end = _tax_year_bounds(tax_year)
+    out = []
+    for s in tbills:
+        trades = [t for t in transactions if t.symbol == s["symbol"]]
+        buys = [t for t in trades if t.action == ActionType.BUY]
+        sells = [t for t in trades if t.action == ActionType.SELL]
+        if not buys:
+            continue
+        nominal = sum((t.quantity or Decimal(0) for t in buys), Decimal(0))
+        cost = -sum((t.amount or Decimal(0) for t in buys), Decimal(0))
+        maturity = None
+        m = _TBILL_DATE.search(s.get("title") or "")
+        if m:
+            d, mo, y = (int(x) for x in m.groups())
+            try:
+                maturity = date(y + 2000 if y < 100 else y, mo, d)
+            except ValueError:
+                maturity = None
+        if sells:
+            event = max(t.date for t in sells)
+            proceeds = sum((t.amount or Decimal(0) for t in sells), Decimal(0))
+            # A parser that reconstructs the redemption books it as a sale at
+            # par; that is a maturity, not an early sale.
+            status = "matured" if proceeds == nominal else "sold"
+        elif maturity is not None:
+            event = maturity
+            status = "matured" if maturity <= date.today() else "open"
+            proceeds = nominal  # redeemed at par, £1 per unit
+        else:
+            event, status, proceeds = None, "unknown", None
+        out.append(
+            {
+                "symbol": s["symbol"],
+                "title": s.get("title"),
+                "maturity": maturity.isoformat() if maturity else None,
+                "nominal": str(nominal),
+                "cost": str(cost),
+                "proceeds": str(proceeds) if proceeds is not None else None,
+                "profit": str(proceeds - cost) if proceeds is not None else None,
+                "status": status,
+                "event_date": event.isoformat() if event else None,
+                "in_year": bool(event and start <= event <= end),
+            }
+        )
+    return out
+
+
+def held_in_year(transactions, tax_year: int) -> set[str]:
+    """Symbols with a positive position at some point in the tax year."""
+    from cgt_calc.model import ActionType
+
+    start, end = _tax_year_bounds(tax_year)
+    adds = {
+        ActionType.BUY,
+        ActionType.STOCK_ACTIVITY,
+        ActionType.SPIN_OFF,
+        ActionType.REINVEST_SHARES,
+    }
+    signed = sorted(
+        (t.date, t.symbol, (t.quantity or Decimal(0)) * (1 if t.action in adds else -1))
+        for t in transactions
+        if t.symbol and (t.action in adds or t.action == ActionType.SELL)
+    )
+    held: dict[str, Decimal] = {}
+    out: set[str] = set()
+    for d, symbol, q in signed:
+        if d > end:
+            break
+        if d >= start and held.get(symbol, Decimal(0)) > 0:
+            out.add(symbol)
+        held[symbol] = held.get(symbol, Decimal(0)) + q
+        if d >= start and held[symbol] > 0:
+            out.add(symbol)
+    out |= {
+        s for s, q in held.items() if q > 0 and all(d < start for d, sym, _ in signed if sym == s)
+    }
+    return out
+
+
+def offshore_funds_without_eri(
+    transactions, symbol_isins: dict, eri_symbols: set[str], tax_year: int
+) -> list[dict]:
+    """Offshore-domiciled holdings (by ISIN) held in the year with no excess
+    reported income entry — their ERI may simply be missing from the data."""
+    out = []
+    for symbol in sorted(held_in_year(transactions, tax_year)):
+        isin = symbol_isins.get(symbol)
+        if isin and str(isin)[:2].upper() in OFFSHORE_ISIN_PREFIXES and symbol not in eri_symbols:
+            out.append({"symbol": symbol, "isin": str(isin)})
+    return out
+
+
 def exempt_summary(job: dict, transactions, warnings: list[str]) -> tuple[list[str], dict]:
     """Decide which securities the calculator must treat as CGT-exempt and
     gather what the report says about them: the configured list from the job,
@@ -286,6 +395,9 @@ def exempt_summary(job: dict, transactions, warnings: list[str]) -> tuple[list[s
             )
     return names, {
         "securities": securities,
+        "tbills": tbill_returns(
+            transactions, [s for s in securities if s["kind"] == "tbill"], job["tax_year"]
+        ),
         "ais_nominal_peak": str(peak),
         "ais_limit": str(AIS_NOMINAL_LIMIT),
         "ais_applies": bool(gilts) and peak > AIS_NOMINAL_LIMIT,
@@ -378,9 +490,19 @@ def run_calculate(job: dict) -> dict:
         except MissingExternalToolError as e:
             handler.messages.append(f"PDF not rendered: {e}")
 
-    bundle = serialize_report(report)
+    symbol_isins = dict(isin_converter.get_symbol_to_isin_map())
+    for t in broker_transactions:
+        if t.symbol and t.isin and t.symbol not in symbol_isins:
+            symbol_isins[t.symbol] = t.isin
+    bundle = serialize_report(report, symbol_isins)
     bundle["refunds"] = refunds
     _, bundle["exempt"] = exempt_summary(job, broker_transactions, handler.messages)
+    bundle["offshore_funds_without_eri"] = offshore_funds_without_eri(
+        broker_transactions,
+        symbol_isins,
+        {e["symbol"] for e in bundle["eri_distributions"]},
+        job["tax_year"],
+    )
     # The accrued-interest lines are carried structured in bundle["exempt"].
     handler.messages = [m for m in handler.messages if not _ACCRUED.search(m)]
     bundle["warnings"] = handler.messages + bundle.get("warnings", [])

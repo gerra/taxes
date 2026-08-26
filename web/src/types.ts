@@ -193,6 +193,9 @@ export interface ExemptSecurity {
 export interface Dividend {
   date: string
   symbol: string
+  /** ISIN country code of the payer; GB = UK dividend, else foreign. */
+  country?: string | null
+  isin?: string | null
   amount_gbp: string
   tax_at_source_gbp: string
   is_interest: boolean

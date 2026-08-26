@@ -56,6 +56,17 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
     )
     fee_total = sum(_f(r["amount_gbp"]) for r in other_rows if r["source"] not in pid_sources)
     pid_total = other_income - fee_total
+    # Dividends split by the payer's ISIN country: GB is a UK dividend, anything
+    # else (Irish/Luxembourg ETFs, US shares) belongs on the foreign pages. ERI
+    # (offshore funds by definition) stays with the foreign figure.
+    div_rows = bundle.get("dividends", [])
+    uk_dividends = sum(_f(d["amount_gbp"]) for d in div_rows if d.get("country") == "GB")
+    uk_div_symbols = sorted({d["symbol"] for d in div_rows if d.get("country") == "GB"})
+    foreign_dividends = max(0.0, dividends_total - uk_dividends)
+    foreign_div_symbols = sorted({d["symbol"] for d in div_rows if d.get("country") != "GB"})
+    # T-bill returns that fall in this year (deeply discounted securities).
+    tbills = [t for t in (bundle.get("exempt") or {}).get("tbills", []) if t.get("in_year")]
+    tbill_profit = sum(_f(t["profit"]) for t in tbills if t.get("profit") is not None)
 
     sa_boxes = [
         {
@@ -120,13 +131,28 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "SA106 foreign pages.",
         },
         {
+            "form": "SA100 TR3",
+            "box": "4",
+            "label": "Dividends from UK companies",
+            "value": round(uk_dividends, 2),
+            "explain": "Dividends whose payer has a GB ISIN"
+            + (f" ({', '.join(uk_div_symbols)})" if uk_div_symbols else "")
+            + ", gross. UK dividends carry no withholding; if one here shows tax "
+            "taken off it is a REIT property income distribution mislabelled as a "
+            "dividend — see the notice.",
+        },
+        {
             "form": "SA106",
             "box": "dividends",
             "label": "Foreign dividends (gross)",
-            "value": round(dividends_total, 2),
-            "explain": "Dividends from non-UK companies (your US holdings), gross, "
-            "in GBP at HMRC monthly rates. Goes on the SA106 foreign pages with "
-            "the US withholding alongside.",
+            "value": round(foreign_dividends, 2),
+            "explain": "Dividends from payers registered outside the UK"
+            + (f" ({', '.join(foreign_div_symbols)})" if foreign_div_symbols else "")
+            + " — US shares, and Irish- or Luxembourg-domiciled ETFs count as foreign "
+            "even when they pay in GBP — gross, in GBP at HMRC monthly rates, plus any "
+            "excess reported income. Goes on the SA106 foreign pages (or the main "
+            "return's small-amounts box if under that year's limit) with the "
+            "withholding alongside.",
         },
         {
             "form": "SA106",
@@ -170,6 +196,24 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
                 "explain": "The 20% basic-rate tax the REITs withheld from the PIDs before "
                 "paying them. HMRC sets it against your bill, so enter it here rather "
                 "than netting it off box 17.",
+            }
+        )
+
+    if tbill_profit > 0:
+        sa_boxes.append(
+            {
+                "form": "SA101 Ai1",
+                "box": "3",
+                "label": "Deeply discounted securities: T-bill returns (gross)",
+                "value": round(tbill_profit, 2),
+                "explain": f"{len(tbills)} UK Treasury bill{'s' if len(tbills) != 1 else ''} "
+                "matured or were sold this year. A T-bill is bought below £1 per unit and "
+                "redeemed at £1 on the date in its name; the difference is income from a "
+                "deeply discounted security, not a capital gain. Reconstructed from the "
+                "purchases because Freetrade never exports the redemption — check it against "
+                "your statements. Goes in the 'Interest from gilt-edged and other UK "
+                "securities, deeply discounted securities and accrued income profits' "
+                "section of the SA101 Additional information pages (gross amount box).",
             }
         )
 
@@ -260,7 +304,7 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "exempt_disposals": exempt_disposals,
         "warnings": warnings,
         "notices": notices.build_notices(
-            warnings, bundle.get("refunds"), bundle.get("exempt"), tax_year
+            warnings, bundle.get("refunds"), bundle.get("exempt"), tax_year, bundle
         ),
         "has_estimates": profile is not None,
         "tax_due": tax_due,

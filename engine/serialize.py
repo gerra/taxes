@@ -30,8 +30,10 @@ def _entry(e) -> dict:
     }
 
 
-def serialize_report(report) -> dict:
+def serialize_report(report, symbol_isins: dict | None = None) -> dict:
     from cgt_calc.model import RuleType
+
+    symbol_isins = symbol_isins or {}
 
     disposals = []
     acquisitions = []
@@ -68,10 +70,15 @@ def serialize_report(report) -> dict:
             for e in entries:
                 if kind == "dividend" and e.dividend is not None:
                     div = e.dividend
+                    isin = symbol_isins.get(label)
                     dividends.append(
                         {
                             "date": dt.isoformat(),
                             "symbol": label,
+                            # ISIN country: GB → UK dividend (SA100 box 4),
+                            # anything else → foreign pages.
+                            "isin": str(isin) if isin else None,
+                            "country": str(isin)[:2].upper() if isin else None,
                             "amount_gbp": _d(e.amount),
                             "tax_at_source_gbp": _d(div.tax_at_source),
                             "is_interest": div.is_interest,

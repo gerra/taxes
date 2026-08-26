@@ -42,6 +42,10 @@ _TREATY = re.compile(
     r"but (-?[\d.]+) was deducted\) for (\S+) ticker"
 )
 
+# Engine lines that a structured notice already covers in full.
+_TBILL_ENGINE = re.compile(r"carry no Treasury bill maturities", re.IGNORECASE)
+_GB_TREATY = re.compile(r"Taxation treaty for GB country is missing \(ticker: (\S+)\)")
+
 # Any date the engine tends to print: an ISO date or a repr'd datetime.date.
 _ANY_DATE = re.compile(
     r"datetime\.date\((\d{4}), (\d{1,2}), (\d{1,2})\)|\b(\d{4})-(\d{2})-(\d{2})\b"
@@ -269,19 +273,203 @@ def _exempt_notices(exempt: dict | None, tax_year: int | None) -> list[dict]:
     return out
 
 
+def _tbill_notices(exempt: dict | None, tax_year: int | None) -> list[dict]:
+    """T-bill returns are income the broker export never shows."""
+    tbills = [t for t in (exempt or {}).get("tbills", []) if t.get("in_year")]
+    if not tbills:
+        return []
+    total = sum(Decimal(t["profit"]) for t in tbills if t.get("profit") is not None)
+    lines = []
+    for t in tbills:
+        when = _fmt_iso(t["event_date"]) if t.get("event_date") else "unknown date"
+        verb = "sold" if t["status"] == "sold" else "matured"
+        lines.append(
+            f"[[{t['symbol']}]] {t.get('title') or ''}: £{Decimal(t['nominal']):,.2f} nominal "
+            f"for £{Decimal(t['cost']):,.2f}, {verb} [[{when}]] → [[£{Decimal(t['profit']):,.2f}]]"
+        )
+    return [
+        {
+            "key": "tbill_returns",
+            "tax_year": tax_year,
+            "kind": "warning",
+            "category": "tbill_returns",
+            "title": "T-bill returns are income your export doesn't show",
+            "summary": (
+                f"[[{len(tbills)}]] UK Treasury bill{'s' if len(tbills) != 1 else ''} "
+                f"matured or were sold this year, earning about [[£{total:,.2f}]] — taxable as "
+                "income (deeply discounted securities), not a capital gain, and absent from "
+                "the Freetrade export."
+            ),
+            "occurrences": lines,
+            "why": (
+                "A T-bill is bought below £1 per unit and redeemed at £1 on the date in its "
+                "name. Brokers export the purchase but not the redemption, so the tool "
+                "reconstructs the return from the purchase and the maturity date; a bill sold "
+                "early uses its sale proceeds instead."
+            ),
+            "action": (
+                "Check the figures against your Freetrade statements, then enter the total in "
+                "the SA101 Additional information pages, 'deeply discounted securities' gross "
+                "amount box (the report's SA101 row). It is not covered by the personal "
+                "savings allowance rules for interest — verify on the SA101 notes."
+            ),
+            "count": len(tbills),
+            "raw": [],
+        }
+    ]
+
+
+def _data_notices(bundle: dict | None, tax_year: int | None) -> list[dict]:
+    """Gaps and mislabels visible in the bundle itself."""
+    if not bundle:
+        return []
+    out: list[dict] = []
+    offshore = bundle.get("offshore_funds_without_eri") or []
+    if offshore:
+        out.append(
+            {
+                "key": "offshore_eri_missing",
+                "tax_year": tax_year,
+                "kind": "warning",
+                "category": "eri_missing",
+                "title": "Offshore funds held with no excess reported income data",
+                "summary": (
+                    f"[[{len(offshore)}]] holding{'s' if len(offshore) != 1 else ''} "
+                    "registered offshore had no excess-reported-income entry this year, so "
+                    "any ERI they reported is missing from the dividend/interest figures."
+                ),
+                "occurrences": [f"[[{f['symbol']}]] ({f['isin']})" for f in offshore],
+                "why": (
+                    "Irish-, Luxembourg- and Jersey-domiciled ETFs are offshore reporting "
+                    "funds: income they report but do not distribute is taxable on you six "
+                    "months after their period end (HS265). The engine only knows the ERI "
+                    "figures bundled with it, so a fund with none may simply be missing data — "
+                    "or be a physical ETC with nothing to report."
+                ),
+                "action": (
+                    "Look up each fund's 'excess reportable income per unit' for the period in "
+                    "its reporting-fund statement (the KPMG/fund reporting pages) and add it to "
+                    "the foreign dividend or interest figure by hand — the tool cannot take an "
+                    "ERI file yet."
+                ),
+                "count": len(offshore),
+                "raw": [],
+            }
+        )
+    pids: dict[str, dict] = {}
+    for d in bundle.get("dividends", []):
+        tax = Decimal(d.get("tax_at_source_gbp") or 0)
+        if d.get("country") == "GB" and tax != 0:
+            year = tax_years.tax_year_of(date.fromisoformat(d["date"]))
+            if tax_year is not None and year != tax_year:
+                continue
+            g = pids.setdefault(
+                d["symbol"],
+                {
+                    "key": f"pid_as_dividend__{d['symbol']}",
+                    "tax_year": year,
+                    "kind": "warning",
+                    "category": "pid_as_dividend",
+                    "title": f"[[{d['symbol']}]] withheld tax on a UK 'dividend' — a REIT PID",
+                    "summary": "",
+                    "occurrences": [],
+                    "why": (
+                        "UK dividends are paid without withholding. A UK payer taking 20% off "
+                        "is a REIT paying a property income distribution, which the export "
+                        "labelled as a dividend (Freetrade only started typing these PROPERTY "
+                        "in 2025)."
+                    ),
+                    "action": (
+                        "Strictly this belongs in 'Other UK income' box 17 (gross) with the tax "
+                        "in box 19, not the dividend boxes; the tool has counted it as a UK "
+                        "dividend with the withholding shown. Move it by hand if you prefer the "
+                        "strict treatment."
+                    ),
+                    "count": 0,
+                    "raw": [],
+                    "_gross": Decimal(0),
+                    "_tax": Decimal(0),
+                },
+            )
+            g["_gross"] += Decimal(d["amount_gbp"])
+            g["_tax"] += abs(tax)
+            g["occurrences"].append(
+                f"[[{_fmt_iso(d['date'])}]]: £{Decimal(d['amount_gbp']):,.2f} gross, "
+                f"[[£{abs(tax):,.2f}]] withheld"
+            )
+            g["count"] += 1
+    for g in pids.values():
+        gross, tax = g.pop("_gross"), g.pop("_tax")
+        g["summary"] = (
+            f"£{gross:,.2f} of distributions with [[£{tax:,.2f}]] tax taken off, counted in "
+            "the UK dividends figure."
+        )
+        out.append(g)
+    foreign_tax = [
+        r for r in bundle.get("interest_tax") or [] if r.get("currency") and r["currency"] != "GBP"
+    ]
+    if foreign_tax:
+        total = sum(Decimal(r["amount_gbp"]) for r in foreign_tax)
+        out.append(
+            {
+                "key": "foreign_interest_withholding",
+                "tax_year": tax_year,
+                "kind": "info",
+                "category": "interest_withholding",
+                "title": "Withholding on foreign interest is not a UK tax credit",
+                "summary": (
+                    f"[[£{total:,.2f}]] was withheld from your foreign interest. The "
+                    "UK–US treaty rate on interest is 0%, so none of it is creditable against "
+                    "UK tax; the interest is still taxable here in full."
+                ),
+                "occurrences": [
+                    f"{r['broker']} [[{_money(r['amount_gbp'], 'GBP')}]] on [[{_fmt_iso(r['date'])}]]"
+                    for r in foreign_tax
+                ],
+                "why": (
+                    "Foreign Tax Credit Relief is capped at the treaty rate, which is nil for "
+                    "US interest. The withholding is reclaimable from the IRS, not HMRC."
+                ),
+                "action": "Give the broker a valid W-8BEN so interest is paid gross.",
+                "count": len(foreign_tax),
+                "raw": [],
+            }
+        )
+    return out
+
+
 def build_notices(
     warnings: list[str],
     refunds: list[dict] | None = None,
     exempt: dict | None = None,
     tax_year: int | None = None,
+    bundle: dict | None = None,
 ) -> list[dict]:
     notices: list[dict] = _exempt_notices(exempt, tax_year)
+    notices += _tbill_notices(exempt, tax_year)
+    notices += _data_notices(bundle, tax_year)
+    covered = {n["key"]: n for n in notices}
     bnb: dict[tuple[str, int], dict] = {}
     treaty: dict[str, dict] = {}
 
     for raw in warnings:
         text = raw.strip()
         if not text:
+            continue
+
+        # The engine's own T-bill line says what the tbill_returns notice says
+        # with figures; keep its text as the notice's raw evidence.
+        if _TBILL_ENGINE.search(text) and (exempt or {}).get("tbills"):
+            key = "tbill_returns" if "tbill_returns" in covered else "exempt_securities"
+            if key in covered:
+                covered[key]["raw"].append(text)
+                continue
+
+        # A GB payer withholding tax has no treaty to check: that is the PID
+        # notice's subject, not a separate warning.
+        m = _GB_TREATY.search(text)
+        if m and f"pid_as_dividend__{m.group(1)}" in covered:
+            covered[f"pid_as_dividend__{m.group(1)}"]["raw"].append(text)
             continue
 
         m = _DISCREPANCY.search(text)
