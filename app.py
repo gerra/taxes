@@ -16,7 +16,8 @@ from dotenv import load_dotenv
 # shared + prod-default values (deployed verbatim); secrets/.env.local overlays
 # dev-only keys and is git-ignored and never deployed.
 load_dotenv("secrets/.env")
-load_dotenv("secrets/.env.local", override=True)
+if not os.environ.get("TAXES_TESTING"):  # tests pin their own isolated env
+    load_dotenv("secrets/.env.local", override=True)
 
 # Send all loggers to stdout so systemd's journald captures them.
 logging.basicConfig(

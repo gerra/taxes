@@ -7,6 +7,7 @@ import tempfile
 from cryptography.fernet import Fernet
 
 _DATA_DIR = tempfile.mkdtemp(prefix="taxes_test_")
+os.environ["TAXES_TESTING"] = "1"
 os.environ["TAXES_DATA_DIR"] = _DATA_DIR
 os.environ["JWT_SECRET"] = "test-jwt-secret"
 os.environ["FERNET_KEY"] = Fernet.generate_key().decode()
