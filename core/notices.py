@@ -64,24 +64,57 @@ def _num(value: str) -> str:
 def _discrepancy(m: re.Match, raw: str) -> dict:
     y, mo, d, action, symbol, qty, price, ccy, broker, supplied, calculated = m.groups()
     verb = "sale" if action == "SELL" else action.lower()
+    missing = Decimal(calculated) - Decimal(supplied)
+    ratio = (missing / Decimal(calculated)) if Decimal(calculated) else Decimal(0)
+    backup_withholding = abs(ratio - Decimal("0.24")) < Decimal("0.003")
+
+    summary = (
+        f"{broker} reported [[{_money(supplied, ccy)}]] for [[{_num(qty)}]] shares at "
+        f"[[{_money(price, ccy, 3)}]] — that's [[{_money(missing, ccy)}]] less than the "
+        f"shares were worth. The full value [[{_money(calculated, ccy)}]] is used for CGT, "
+        "as HMRC requires."
+    )
+    if backup_withholding:
+        summary += (
+            " The missing amount is exactly [[24%]] of the proceeds — the US "
+            "backup-withholding rate, which brokers apply when they have no valid "
+            "W-8BEN on file."
+        )
+        why = (
+            "A UK resident with a valid W-8BEN should have NO US tax withheld on share "
+            "sales. Backup withholding kicks in when the form is missing or expired "
+            "(W-8BENs last 3 calendar years). It is not a cost of the disposal — your CGT "
+            "proceeds are still the full amount — and it's usually reclaimable: from the "
+            "broker if caught in the same US tax year, otherwise from the IRS by filing "
+            "Form 1040-NR with the 1042-S/1099 that reports the withholding."
+        )
+        action = (
+            "Check your W-8BEN status with the broker (Schwab: Profile → Tax forms), then "
+            "ask them how to reclaim the withheld amount. Keep the trade-details PDF as evidence."
+        )
+    else:
+        why = (
+            "The broker deducted something from the proceeds before reporting them — "
+            "commonly tax withheld (sell-to-cover at an RSU vest, or US withholding) or a "
+            "fee not in the fees column. HMRC treats every share sold as disposed at its "
+            "full price, so the gain is computed on quantity × price minus dealing fees only."
+        )
+        action = (
+            "Open the trade details on the broker's site and check what was deducted; "
+            "confirm it below with the withholding figure and the PDF."
+        )
     return {
         "key": f"amount_adjusted__{symbol}__{int(y):04d}-{int(mo):02d}-{int(d):02d}",
         "data": {"supplied": supplied, "calculated": calculated, "currency": ccy},
         "kind": "warning",
         "category": "amount_adjusted",
-        "title": f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — proceeds adjusted",
-        "summary": (
-            f"{broker} reported [[{_money(supplied, ccy)}]] for [[{_num(qty)}]] shares at "
-            f"[[{_money(price, ccy, 3)}]], which doesn't add up. The full value "
-            f"[[{_money(calculated, ccy)}]] is used for CGT."
-        ),
+        "title": f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — tax withheld from proceeds"
+        if backup_withholding
+        else f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — proceeds adjusted",
+        "summary": summary,
         "occurrences": [],
-        "why": (
-            "This is usually a sell-to-cover: the broker sold shares to pay tax and only "
-            "reported the cash you kept. HMRC treats every share sold as disposed, so the "
-            "gain is computed on the full quantity × price."
-        ),
-        "action": "Check the Schwab statement for that date confirms shares were withheld for tax.",
+        "why": why,
+        "action": action,
         "count": 1,
         "raw": [raw],
     }

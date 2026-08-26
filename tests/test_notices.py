@@ -112,3 +112,13 @@ def test_resolution_flags_mismatch():
     )
     assert notices[0]["resolution"]["verified"] is False
     assert "off by" in notices[0]["resolution"]["check"]
+
+
+def test_discrepancy_detects_backup_withholding():
+    [n] = build_notices([DISCREPANCY])
+    # 45,694.37 - 34,727.41 = 10,966.96 = 24.0% of proceeds
+    assert "[[$10,966.96]]" in n["summary"]
+    assert "[[24%]]" in n["summary"]
+    assert "tax withheld" in n["title"]
+    assert "W-8BEN" in n["why"]
+    assert "sell-to-cover" not in n["why"]
