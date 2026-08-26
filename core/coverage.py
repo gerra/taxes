@@ -9,16 +9,19 @@ from core import repo, tax_years
 # Static export instructions shown next to gaps, per account type.
 INSTRUCTIONS = {
     "schwab_individual": (
-        "schwab.com → Accounts → History → set the date range → Export (CSV). "
-        "Schwab caps each export at ~4 years — export multiple chunks; overlaps are fine."
+        "schwab.com → Accounts → Transaction history → select period (max ~4 years "
+        "per export) → Search → Download as .csv. Export multiple chunks to cover "
+        "your full history; overlaps are fine."
     ),
     "schwab_awards": (
-        "Schwab Equity Award Center → transaction history → export CSV (preferred) "
-        "or JSON. Needed for the fair-market-value prices of your vested awards."
+        "Same flow, on the Equity Award account: schwab.com → Accounts → Transaction "
+        "history → select the equity award account and period → Search → Download as "
+        ".csv. Needed for the fair-market-value prices of your vested awards."
     ),
     "freetrade_gia": (
-        "Freetrade app → Activity (GIA) → Export CSV. Limited to 12 months per "
-        "export — do one per year; overlaps are fine."
+        "Use the Freetrade APP, not the website: GIA → Activity → Share button (top "
+        "right) → export CSV. The app exports from 2020; the website only covers the "
+        "last 12 months."
     ),
     "bank_generic": (
         "Download a statement CSV covering the tax year. Only interest rows are "

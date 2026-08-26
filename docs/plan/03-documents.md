@@ -44,11 +44,13 @@ upload instantly, and shows what's still missing.
    accepted documents' ranges. Gaps rendered as concrete asks:
    *"Schwab Individual: missing 6 Apr 2022 – 14 Mar 2024 — export chunk 2 of 2"*.
 4. **Export instructions** (static content per account type, shown next to each gap):
-   - **Schwab individual**: schwab.com → Accounts → History → Date range → Export CSV;
-     max ~4 years per export, so multiple chunks; expected columns listed.
-   - **Schwab equity awards**: Equity Award Center → transaction history export
-     (CSV preferred over legacy JSON); explains why it's needed (vest FMV prices).
-   - **Freetrade**: app → Activity → GIA → Export CSV; 12-month limit → yearly chunks.
+   - **Schwab individual**: schwab.com → Accounts → Transaction history → select
+     period (max ~4 years) → Search → Download as .csv; multiple chunks for full
+     history.
+   - **Schwab equity awards**: same Transaction history flow on the equity award
+     account; explains why it's needed (vest FMV prices).
+   - **Freetrade**: the APP (GIA → Activity → Share button, exports from 2020);
+     the website only covers the last 12 months.
    - **Revolut / HSBC**: statement CSV export; only interest matters for the return —
      see column mapper below.
 5. **Bank column mapper**: Revolut/HSBC CSVs aren't cgt-calc formats. A small UI maps
