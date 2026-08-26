@@ -10,7 +10,7 @@ GitHub Actions).
 
 ## Status
 
-Planning. Nothing is implemented yet.
+v1 live at https://taxes.gerra.sh. Open items: [TODO.md](TODO.md).
 
 ## Plan
 

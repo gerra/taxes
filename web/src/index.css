@@ -563,3 +563,52 @@ select:focus {
   color: var(--muted);
   margin-top: 4px;
 }
+
+/* ── Tooltips ──────────────────────────────────────────────────────────── */
+
+.tip-wrap {
+  position: relative;
+  cursor: help;
+}
+
+.tip-wrap:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 0;
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: pre-line;
+  width: max-content;
+  max-width: 340px;
+  z-index: 20;
+  box-shadow: var(--shadow);
+  text-align: left;
+  pointer-events: none;
+}
+
+.tip-wrap:hover::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 18px;
+  border: 6px solid transparent;
+  border-top-color: var(--ink);
+  z-index: 20;
+  pointer-events: none;
+}
+
+.gap-row {
+  display: inline-block;
+  margin-right: 14px;
+}
+
+.gap-row.soft {
+  color: var(--muted);
+  font-weight: 400;
+}

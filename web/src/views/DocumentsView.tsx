@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
-import type { Account, AccountCoverage, AccountType, Checklist, MappingNeeded } from '../types'
+import type {
+  Account,
+  AccountCoverage,
+  AccountType,
+  Checklist,
+  DateRange,
+  MappingNeeded,
+} from '../types'
 import { shortDate } from '../utils/format'
 
 const TYPE_LABELS: Record<AccountType, string> = {
@@ -9,6 +16,10 @@ const TYPE_LABELS: Record<AccountType, string> = {
   freetrade_gia: 'Freetrade — GIA',
   bank_generic: 'Bank statement (interest)',
   raw_csv: 'Raw CSV (cgt-calc format)',
+}
+
+function gapDays(g: DateRange): number {
+  return Math.round((new Date(g.end).getTime() - new Date(g.start).getTime()) / 86400000) + 1
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -128,11 +139,24 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
 
       <CoverageBar coverage={coverage} />
 
-      {coverage.gaps.length > 0 && (
+      {(coverage.gaps.length > 0 || coverage.soft_gaps.length > 0) && (
         <div className="gaps">
           {coverage.gaps.map((g, i) => (
-            <div key={i} className="gap-row">
+            <div
+              key={i}
+              className="gap-row tip-wrap"
+              data-tip={`No uploaded document contains transactions between ${shortDate(g.start)} and ${shortDate(g.end)} (${gapDays(g)} days). The Section 104 pool needs your full history, so the calculation may be wrong until this period is covered.\n\nHow to get it: ${coverage.instructions}`}
+            >
               Missing <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>
+            </div>
+          ))}
+          {coverage.soft_gaps.map((g, i) => (
+            <div
+              key={`s${i}`}
+              className="gap-row soft tip-wrap"
+              data-tip={`Small seam between documents: ${shortDate(g.start)} → ${shortDate(g.end)} (${gapDays(g)} days). Short breaks like this are usually just days with no transactions — only re-export if you traded then.`}
+            >
+              Small seam <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>
             </div>
           ))}
         </div>
@@ -151,7 +175,10 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
                 <td className="muted">{d.tx_count} rows</td>
                 <td>
                   {d.warnings.length > 0 && (
-                    <span className="badge warn" title={d.warnings.join('\n')}>
+                    <span
+                      className="badge warn tip-wrap"
+                      data-tip={d.warnings.map((w) => `• ${w}`).join('\n\n')}
+                    >
                       {d.warnings.length}⚠
                     </span>
                   )}
