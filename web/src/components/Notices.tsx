@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useConfirm } from './ConfirmDialog'
 import type { Notice, VerificationCheck } from '../types'
@@ -88,6 +88,53 @@ function toneFor(notice: Notice): Tone {
   return notice.kind
 }
 
+const plain = (text: string) => text.replace(/\[\[(.*?)\]\]/g, '$1')
+
+// One notice as plain text, for pasting into an email to an accountant.
+export function noticeText(notice: Notice): string {
+  const head = [plain(notice.title)]
+  if (notice.count > 1) head.push(`(×${notice.count})`)
+  if (notice.tax_year != null) head.push(`[${taxYearLabel(notice.tax_year)}]`)
+  const lines = [head.join(' ')]
+  if (notice.summary) lines.push(plain(notice.summary))
+  for (const o of notice.occurrences) lines.push(`- ${plain(o)}`)
+  if (notice.action) lines.push(`→ ${plain(notice.action)}`)
+  if (notice.why) lines.push(`Why: ${notice.why}`)
+  return lines.join('\n')
+}
+
+function CopyButton({
+  text,
+  label = 'Copy',
+  className = 'link',
+}: {
+  text: () => string
+  label?: string
+  className?: string
+}) {
+  const [copied, setCopied] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text())
+    } catch {
+      return // no clipboard permission — say nothing rather than claim success
+    }
+    setCopied(true)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <button type="button" className={className} onClick={copy}>
+      {copied ? 'Copied' : label}
+    </button>
+  )
+}
+
 type Scope = 'year' | 'all'
 
 // The engine replays every year's transactions on each run, so dated notices
@@ -126,26 +173,35 @@ export default function Notices({
       <div className="notices-head">
         <h3>Things to know</h3>
         <span className="muted small">{parts.join(' · ')}</span>
-        {hidden > 0 && (
-          <div className="seg" role="group" aria-label="Which tax years to show">
-            <button
-              type="button"
-              className={scope === 'year' ? 'active' : ''}
-              aria-pressed={scope === 'year'}
-              onClick={() => setScope('year')}
-            >
-              This year
-            </button>
-            <button
-              type="button"
-              className={scope === 'all' ? 'active' : ''}
-              aria-pressed={scope === 'all'}
-              onClick={() => setScope('all')}
-            >
-              All years (+{hidden})
-            </button>
-          </div>
-        )}
+        <div className="notices-head-right">
+          {hidden > 0 && (
+            <div className="seg" role="group" aria-label="Which tax years to show">
+              <button
+                type="button"
+                className={scope === 'year' ? 'active' : ''}
+                aria-pressed={scope === 'year'}
+                onClick={() => setScope('year')}
+              >
+                This year
+              </button>
+              <button
+                type="button"
+                className={scope === 'all' ? 'active' : ''}
+                aria-pressed={scope === 'all'}
+                onClick={() => setScope('all')}
+              >
+                All years (+{hidden})
+              </button>
+            </div>
+          )}
+          {shown.length > 0 && (
+            <CopyButton
+              className="link copy-all"
+              label={`Copy all (${shown.length})`}
+              text={() => shown.map(noticeText).join('\n\n')}
+            />
+          )}
+        </div>
       </div>
       {shown.length === 0 && taxYear !== undefined && (
         <p className="muted small notices-empty">
@@ -211,15 +267,7 @@ function NoticeCard({
             <Hl text={notice.summary} />
           </div>
         )}
-        {notice.occurrences.length > 0 && (
-          <ul className="notice-occurrences">
-            {notice.occurrences.map((o, i) => (
-              <li key={i}>
-                <Hl text={o} />
-              </li>
-            ))}
-          </ul>
-        )}
+        {notice.occurrences.length > 0 && <Occurrences items={notice.occurrences} />}
         {!res && notice.action && (
           <div className="notice-action">
             <Hl text={notice.action} />
@@ -273,6 +321,7 @@ function NoticeCard({
               {open ? 'Less' : 'Why this matters'}
             </button>
           )}
+          <CopyButton className="link notice-copy" text={() => noticeText(notice)} />
         </div>
 
         {editing && (
@@ -301,6 +350,37 @@ function NoticeCard({
         )}
       </div>
     </div>
+  )
+}
+
+// Long lists (every exempt gilt, every missing price) bury the rest of the card,
+// so only the first few show until asked for.
+const OCCURRENCE_PREVIEW = 5
+
+function Occurrences({ items }: { items: string[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const overflow = items.length - OCCURRENCE_PREVIEW
+  const shown = expanded || overflow <= 0 ? items : items.slice(0, OCCURRENCE_PREVIEW)
+
+  return (
+    <>
+      <ul className="notice-occurrences">
+        {shown.map((o, i) => (
+          <li key={i}>
+            <Hl text={o} />
+          </li>
+        ))}
+      </ul>
+      {overflow > 0 && (
+        <button
+          className="link occurrences-more"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Show fewer' : `Show all ${items.length}`}
+        </button>
+      )}
+    </>
   )
 }
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Notices, { Hl } from '../components/Notices'
 import type { Notice } from '../types'
 
@@ -182,4 +182,91 @@ test('only foreign-year notices shows an empty line plus the switcher', () => {
   render(<Notices notices={notices} taxYear={2021} />)
   expect(screen.getByText(/Nothing flagged for 2021\/22/)).toBeInTheDocument()
   expect(screen.queryByText('META sale')).toBeNull()
+})
+
+test('long occurrence lists collapse to a preview until expanded', () => {
+  const items = Array.from({ length: 12 }, (_, i) => `item ${i}`)
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'exempt_securities',
+      kind: 'info',
+      category: 'exempt',
+      title: 'Gilts and T-bills treated as exempt from capital gains tax',
+      occurrences: items,
+    },
+  ]
+  const { container } = render(<Notices notices={notices} />)
+  expect(container.querySelectorAll('.notice-occurrences li')).toHaveLength(5)
+  expect(screen.queryByText('item 11')).toBeNull()
+
+  fireEvent.click(screen.getByText('Show all 12'))
+  expect(container.querySelectorAll('.notice-occurrences li')).toHaveLength(12)
+  expect(screen.getByText('item 11')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByText('Show fewer'))
+  expect(container.querySelectorAll('.notice-occurrences li')).toHaveLength(5)
+})
+
+test('short occurrence lists show in full with no toggle', () => {
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'k',
+      kind: 'info',
+      category: 'exempt',
+      title: 'A note',
+      occurrences: ['a', 'b', 'c'],
+    },
+  ]
+  const { container } = render(<Notices notices={notices} />)
+  expect(container.querySelectorAll('.notice-occurrences li')).toHaveLength(3)
+  expect(container.querySelector('.occurrences-more')).toBeNull()
+})
+
+test('copy buttons put a plain-text notice on the clipboard', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.assign(navigator, { clipboard: { writeText } })
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'exempt_securities',
+      kind: 'info',
+      category: 'exempt',
+      title: 'Gilts treated as [[exempt]]',
+      summary: 'Left out of the SA108 figures.',
+      occurrences: ['[[TN28]] — 1/8% Gilt 2028'],
+      action: 'Check your statements.',
+      why: 'Gilt-edged securities are exempt assets.',
+      tax_year: 2024,
+      count: 2,
+    },
+    {
+      ...base,
+      key: 'other',
+      kind: 'info',
+      category: 'x',
+      title: 'Second note',
+      summary: '',
+      tax_year: 2024,
+    },
+  ]
+  render(<Notices notices={notices} taxYear={2024} />)
+
+  fireEvent.click(screen.getAllByText('Copy')[0])
+  await screen.findAllByText('Copied')
+  expect(writeText).toHaveBeenCalledWith(
+    [
+      'Gilts treated as exempt (×2) [2024/25]',
+      'Left out of the SA108 figures.',
+      '- TN28 — 1/8% Gilt 2028',
+      '→ Check your statements.',
+      'Why: Gilt-edged securities are exempt assets.',
+    ].join('\n'),
+  )
+
+  fireEvent.click(screen.getByText('Copy all (2)'))
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2))
+  expect(writeText.mock.calls[1][0]).toContain('Second note')
+  expect(writeText.mock.calls[1][0]).toContain('Gilts treated as exempt')
 })

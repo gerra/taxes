@@ -848,8 +848,11 @@ select:focus {
   margin: 0;
 }
 
-.notices-head .seg {
+.notices-head-right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .notices-empty {
@@ -1381,6 +1384,17 @@ select:focus {
   margin: 0 !important;
 }
 
+.notices-head-right button.link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+.notices-head-right button.link:hover {
+  opacity: 1;
+}
+
 /* ── Gaps: rows with actions, confirmed-empty ranges ───────────────────── */
 
 .gap-list {
@@ -1633,4 +1647,17 @@ select:focus {
 .admin-add input {
   flex: 1;
   max-width: 340px;
+}
+
+.occurrences-more {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+.occurrences-more:hover {
+  opacity: 1;
 }
