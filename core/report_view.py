@@ -9,7 +9,7 @@ where it goes."""
 from datetime import date
 from decimal import Decimal
 
-from core import tax_years
+from core import notices, tax_years
 
 
 def _f(value) -> float:
@@ -160,6 +160,7 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "sa_boxes": sa_boxes,
         "rate_change_split": rate_change,
         "warnings": warnings,
+        "notices": notices.build_notices(warnings),
         "has_estimates": profile is not None,
     }
 

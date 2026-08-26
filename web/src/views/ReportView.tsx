@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
+import Notices from '../components/Notices'
 import type { CalcRun, DisposalEvent, Report } from '../types'
 import { gbp, num, shortDate } from '../utils/format'
 
@@ -131,11 +132,7 @@ function ReportBody({ report }: { report: Report }) {
           the gaps in the Documents tab.
         </div>
       )}
-      {view.warnings.map((w, i) => (
-        <div key={i} className="banner info">
-          {w}
-        </div>
-      ))}
+      <Notices notices={view.notices ?? []} />
 
       <div className="cards-row">
         <StatCard

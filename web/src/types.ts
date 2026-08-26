@@ -127,10 +127,23 @@ export interface SABox {
   explain: string
 }
 
+export interface Notice {
+  kind: 'info' | 'warning' | 'error'
+  category: string
+  title: string
+  summary: string
+  occurrences: string[]
+  why: string | null
+  action: string | null
+  count: number
+  raw: string[]
+}
+
 export interface ReportView {
   tax_year: number
   label: string
   filing_deadline: string
+  notices: Notice[]
   cards: {
     taxable_gain: { value: number | null; sub?: string | null; estimated_tax: number | null }
     dividends_taxable: { value: number; sub?: string; estimated_tax: number | null }
