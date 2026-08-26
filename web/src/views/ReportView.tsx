@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
 import Notices from '../components/Notices'
-import type { CalcRun, DisposalEvent, Report } from '../types'
-import { gbp, num, shortDate } from '../utils/format'
+import type { CalcRun, DisposalEvent, Report, TaxDue } from '../types'
+import { gbp, num, pct, shortDate } from '../utils/format'
 
 const RULE_EXPLAIN: Record<string, string> = {
   SAME_DAY:
@@ -134,6 +134,8 @@ function ReportBody({ report }: { report: Report }) {
       )}
       <Notices notices={view.notices ?? []} />
 
+      <TaxDueCard taxDue={view.tax_due} deadline={view.filing_deadline} />
+
       <div className="cards-row">
         <StatCard
           title="Taxable capital gain"
@@ -154,12 +156,6 @@ function ReportBody({ report }: { report: Report }) {
         />
         <StatCard title="Foreign interest" value={gbp(view.cards.foreign_interest.value)} />
       </div>
-      {!view.has_estimates && (
-        <p className="muted small">
-          Fill in the Planner tab to see estimated tax at your marginal rates on these cards.
-        </p>
-      )}
-
       {view.rate_change_split && (
         <div className="banner info">
           CGT rates changed on {shortDate(view.rate_change_split.date)}: gains before that date{' '}
@@ -258,6 +254,63 @@ function ReportBody({ report }: { report: Report }) {
           </table>
         </>
       )}
+    </div>
+  )
+}
+
+function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline: string }) {
+  if (!taxDue?.available) {
+    return (
+      <div className="total-card">
+        <div>
+          <div className="stat-title">Estimated tax to pay</div>
+          <div className="stat-value">—</div>
+        </div>
+        <div className="total-note">
+          Enter your income (P60 pay, pension contributions) in the Planner tab — the tax on these
+          figures depends on your marginal rate, so it can't be estimated without it.
+        </div>
+      </div>
+    )
+  }
+  const rates = taxDue.cgt_rates
+  const cgtDetail =
+    rates && (taxDue.cgt_at_basic ?? 0) > 0 && (taxDue.cgt_at_higher ?? 0) > 0
+      ? `${gbp(taxDue.cgt_at_basic, 0)} @ ${pct(rates.basic)} + ${gbp(taxDue.cgt_at_higher, 0)} @ ${pct(rates.higher)}`
+      : rates && (taxDue.cgt_at_higher ?? 0) > 0
+        ? `@ ${pct(rates.higher)}`
+        : rates && (taxDue.cgt_at_basic ?? 0) > 0
+          ? `@ ${pct(rates.basic)}`
+          : 'within exempt amount'
+  return (
+    <div className="total-card">
+      <div>
+        <div className="stat-title">Estimated tax to pay via Self Assessment</div>
+        <div className="stat-value">{gbp(taxDue.total)}</div>
+      </div>
+      <div className="total-breakdown">
+        <div>
+          Capital gains
+          <b>{gbp(taxDue.cgt)}</b>
+          {cgtDetail}
+        </div>
+        <div>
+          Dividends
+          <b>{gbp(taxDue.dividends)}</b>
+          after {gbp(taxDue.dividend_allowance, 0)} allowance
+        </div>
+        <div>
+          Interest
+          <b>{gbp(taxDue.interest)}</b>
+          after {gbp(taxDue.psa, 0)} savings allowance
+        </div>
+      </div>
+      <div className="total-note">
+        On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
+        allowance {gbp(taxDue.personal_allowance, 0)}). Employment tax is already collected via
+        PAYE. If this exceeds £1,000, HMRC will also ask for payments on account towards next year
+        (excluding the CGT part). Due {shortDate(deadline)}.
+      </div>
     </div>
   )
 }

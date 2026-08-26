@@ -114,9 +114,35 @@ export default function PlannerView({ year }: { year: number }) {
 
 function ProfileSummary({ data }: { data: PlannerData }) {
   const p = data.profile
+  const y = data.year
+  const reliefs = p.income.total - p.income.adjusted_net_income
+  const aniTip =
+    `Non-savings income (employment + other) ${gbp(p.income.non_savings, 0)}\n` +
+    `+ interest ${gbp(p.income.savings, 0)}\n` +
+    `+ dividends ${gbp(p.income.dividends, 0)}\n` +
+    `= total income ${gbp(p.income.total, 0)}\n` +
+    `− gross pension (SIPP) & Gift Aid relief ${gbp(reliefs, 0)}\n` +
+    `= adjusted net income ${gbp(p.income.adjusted_net_income, 0)}\n\n` +
+    `Investment figures come from this year's report; enter your P60 pay above to complete the picture.`
+  const paTip =
+    `Standard allowance ${gbp(y.personal_allowance, 0)}, reduced by £1 for every £2 of adjusted net income above ${gbp(y.pa_taper_start, 0)}.\n` +
+    (p.bands.in_pa_taper
+      ? `Yours is tapered: ${gbp(p.income.adjusted_net_income, 0)} is ${gbp(p.income.adjusted_net_income - y.pa_taper_start, 0)} over the threshold.`
+      : `Yours (${gbp(p.income.adjusted_net_income, 0)}) is below the threshold, so you keep the full allowance.`)
+  const taxTip =
+    `Income is stacked in HMRC order — non-savings, then interest, then dividends, then gains — and each slice taxed at the band it lands in.\n\n` +
+    `Dividends: ${gbp(p.tax.dividend_tax)} after the ${gbp(y.dividend_allowance, 0)} dividend allowance (rates ${pct(y.dividend_rates.basic)} / ${pct(y.dividend_rates.higher)} / ${pct(y.dividend_rates.additional)}).\n` +
+    `Interest: ${gbp(p.tax.savings_tax)} after your ${gbp(p.allowances.psa, 0)} personal savings allowance${p.allowances.starting_rate_used > 0 ? ` and ${gbp(p.allowances.starting_rate_used, 0)} starting-rate band` : ''}.\n` +
+    `CGT: ${gbp(p.tax.cgt_estimate)} after the ${gbp(y.cgt_allowance, 0)} annual exempt amount — ${pct(y.cgt_rates_shares.basic)} within the basic band, ${pct(y.cgt_rates_shares.higher)} above.\n\n` +
+    `Employment tax is already paid via PAYE and isn't included.`
+  const marginalTip =
+    `Your taxable income (${gbp(p.bands.taxable_income, 0)}) sits in the ${p.bands.marginal_band} band → ${pct(p.marginal.income_rate)} relief on pension contributions.` +
+    (p.bands.in_pa_taper
+      ? `\n\nYou're in the £100,000–£125,140 zone where each £2 also restores £1 of personal allowance, so the effective relief is ~60%.`
+      : '')
   return (
     <div className="cards-row">
-      <div className="stat-card">
+      <div className="stat-card tip-wrap" data-tip={aniTip}>
         <div className="stat-title">Adjusted net income</div>
         <div className="stat-value">{gbp(p.income.adjusted_net_income, 0)}</div>
         <div className="muted small">
@@ -124,11 +150,12 @@ function ProfileSummary({ data }: { data: PlannerData }) {
           {p.bands.in_pa_taper && ' · in the 60% zone'}
         </div>
       </div>
-      <div className="stat-card">
+      <div className="stat-card tip-wrap" data-tip={paTip}>
         <div className="stat-title">Personal allowance</div>
         <div className="stat-value">{gbp(p.allowances.personal_allowance, 0)}</div>
+        <div className="muted small">{p.bands.in_pa_taper ? 'tapered' : 'full allowance'}</div>
       </div>
-      <div className="stat-card">
+      <div className="stat-card tip-wrap" data-tip={taxTip}>
         <div className="stat-title">Est. tax on investments</div>
         <div className="stat-value">
           {gbp(p.tax.dividend_tax + p.tax.savings_tax + p.tax.cgt_estimate)}
@@ -138,11 +165,14 @@ function ProfileSummary({ data }: { data: PlannerData }) {
           {gbp(p.tax.cgt_estimate, 0)}
         </div>
       </div>
-      <div className="stat-card">
+      <div className="stat-card tip-wrap" data-tip={marginalTip}>
         <div className="stat-title">Marginal relief rate</div>
         <div className="stat-value">{pct(p.marginal.effective_rate)}</div>
         <div className="muted small">what £1 of pension contribution saves</div>
       </div>
+      <p className="muted small" style={{ gridColumn: '1 / -1', margin: 0 }}>
+        Hover any card to see exactly how it was computed.
+      </p>
     </div>
   )
 }

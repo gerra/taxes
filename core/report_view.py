@@ -152,6 +152,26 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "interest_estimated_tax": profile["tax"]["savings_tax"] if profile else None,
     }
 
+    if profile:
+        tx = profile["tax"]
+        tax_due = {
+            "available": True,
+            "cgt": tx["cgt_estimate"],
+            "dividends": tx["dividend_tax"],
+            "interest": tx["savings_tax"],
+            "total": round(tx["cgt_estimate"] + tx["dividend_tax"] + tx["savings_tax"], 2),
+            "marginal_band": profile["bands"]["marginal_band"],
+            "personal_allowance": profile["allowances"]["personal_allowance"],
+            "psa": profile["allowances"]["psa"],
+            "cgt_at_basic": tx["cgt_at_basic"],
+            "cgt_at_higher": tx["cgt_at_higher"],
+            "cgt_rates": y.get("cgt_rates_shares"),
+            "dividend_allowance": y.get("dividend_allowance"),
+            "cgt_allowance": y.get("cgt_allowance"),
+        }
+    else:
+        tax_due = {"available": False}
+
     return {
         "tax_year": tax_year,
         "label": yl,
@@ -162,6 +182,7 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "warnings": warnings,
         "notices": notices.build_notices(warnings),
         "has_estimates": profile is not None,
+        "tax_due": tax_due,
     }
 
 

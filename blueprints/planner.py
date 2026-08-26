@@ -56,5 +56,19 @@ def planner(tax_year: int):
             "profile": profile,
             "tips": tips.build_tips(ctx),
             "filing_deadline": tax_years.filing_deadline(tax_year).isoformat(),
+            "year": {
+                k: year[k]
+                for k in (
+                    "personal_allowance",
+                    "pa_taper_start",
+                    "basic_band",
+                    "additional_threshold",
+                    "cgt_allowance",
+                    "dividend_allowance",
+                    "income_rates",
+                    "dividend_rates",
+                    "cgt_rates_shares",
+                )
+            },
         }
     )

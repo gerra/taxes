@@ -155,6 +155,23 @@ export interface ReportView {
   rate_change_split: { before: number; after: number; date: string } | null
   warnings: string[]
   has_estimates: boolean
+  tax_due: TaxDue
+}
+
+export interface TaxDue {
+  available: boolean
+  total?: number
+  cgt?: number
+  dividends?: number
+  interest?: number
+  marginal_band?: string
+  personal_allowance?: number
+  psa?: number
+  cgt_at_basic?: number
+  cgt_at_higher?: number
+  cgt_rates?: { basic: number; higher: number } | null
+  dividend_allowance?: number | null
+  cgt_allowance?: number | null
 }
 
 export interface Report {
@@ -203,6 +220,17 @@ export interface PlannerData {
   }
   tips: Tip[]
   filing_deadline: string
+  year: {
+    personal_allowance: number
+    pa_taper_start: number
+    basic_band: number
+    additional_threshold: number
+    cgt_allowance: number
+    dividend_allowance: number
+    income_rates: Record<string, number>
+    dividend_rates: Record<string, number>
+    cgt_rates_shares: { basic: number; higher: number }
+  }
 }
 
 export interface MappingNeeded {
