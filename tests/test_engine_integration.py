@@ -64,6 +64,28 @@ def test_validate_bad_file(tmp_path):
     assert result["error"]["type"]
 
 
+def test_runner_logs_worker_failure(tmp_path, caplog):
+    """The web side logs a failed job and the worker's traceback, so a rejected
+    upload is diagnosable from the journal."""
+    import logging
+
+    from engine.runner import _run_worker as runner_run_worker
+
+    caplog.set_level(logging.INFO)
+    bad = tmp_path / "bad.csv"
+    bad.write_text("date,action\n2023-01-01,BUY\n")
+    result = runner_run_worker(
+        {"mode": "validate", "account_type": "raw_csv", "file": str(bad)}, str(tmp_path)
+    )
+    assert not result["ok"]
+    messages = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        m.startswith("worker (validate, raw_csv) failed: ") and result["error"]["message"] in m
+        for m in messages
+    )
+    assert any("worker stderr tail:" in m and "Traceback" in m for m in messages)
+
+
 def test_calculate_2023(raw_file, tmp_path):
     paths.ensure_dirs()
     work_dir = str(tmp_path / "work")

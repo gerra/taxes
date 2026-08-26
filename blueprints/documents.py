@@ -39,6 +39,12 @@ def upload(account_id: int):
         os.unlink(tmp_path)
 
     if result.get("needs_mapping"):
+        _log.info(
+            "upload %r for account %s (%s) needs a column mapping",
+            file.filename,
+            account_id,
+            account["type"],
+        )
         return jsonify(
             {
                 "needs_mapping": True,
@@ -47,7 +53,17 @@ def upload(account_id: int):
             }
         ), 409
     if not result.get("ok"):
-        return jsonify({"error": result.get("error")}), 400
+        err = result.get("error") or {}
+        _log.warning(
+            "rejected upload %r for account %s (%s, %s bytes): %s: %s",
+            file.filename,
+            account_id,
+            account["type"],
+            len(data),
+            err.get("type") if isinstance(err, dict) else "error",
+            err.get("message") if isinstance(err, dict) else err,
+        )
+        return jsonify({"error": err}), 400
 
     doc = repo.create_document(
         g.user_id,
@@ -61,6 +77,7 @@ def upload(account_id: int):
         result.get("warnings", []),
     )
     if doc is None:
+        _log.info("duplicate upload %r for account %s ignored", file.filename, account_id)
         return jsonify(
             {"error": {"type": "duplicate", "message": "Identical file already uploaded"}}
         ), 409

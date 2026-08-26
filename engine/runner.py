@@ -69,7 +69,22 @@ def _run_worker(job: dict, work_dir: str) -> dict:
             "error": {"type": "worker_crash", "message": (proc.stderr or "worker crashed")[-2000:]},
         }
     with open(result_path) as f:
-        return json.load(f)
+        result = json.load(f)
+    if result.get("ok"):
+        if proc.stderr:
+            _log.debug("worker (%s) stderr: %s", job.get("mode"), proc.stderr[-2000:])
+    else:
+        err = result.get("error") or {}
+        _log.warning(
+            "worker (%s, %s) failed: %s: %s",
+            job.get("mode"),
+            job.get("account_type") or job.get("tax_year"),
+            err.get("type"),
+            err.get("message"),
+        )
+        if proc.stderr:
+            _log.warning("worker stderr tail: %s", proc.stderr[-2000:])
+    return result
 
 
 # ── Bank CSV → raw conversion ─────────────────────────────────────────────────

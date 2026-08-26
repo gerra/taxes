@@ -167,3 +167,56 @@ def test_report_years_lists_configured_years(auth_client):
     years = auth_client.get("/api/report/years").get_json()["years"]
     assert years == sorted(tax_years.YEARS)
     assert years == sorted(years)
+
+
+def test_rejected_upload_is_logged_with_context(auth_client, monkeypatch, caplog):
+    """A failed upload must leave the reason in the logs, not just a bare 400."""
+    import io
+    import logging
+
+    from blueprints import documents
+
+    account = auth_client.post(
+        "/api/accounts", json={"type": "freetrade_gia", "name": "GIA"}
+    ).get_json()
+    monkeypatch.setattr(
+        documents.runner,
+        "validate_upload",
+        lambda _account, _path: {
+            "ok": False,
+            "error": {"type": "ParsingError", "message": "row 18: Unknown type: 'X'"},
+        },
+    )
+    caplog.set_level(logging.INFO)
+
+    resp = auth_client.post(
+        f"/api/accounts/{account['id']}/documents",
+        data={"file": (io.BytesIO(b"Title,Type\n"), "GIA_26_08_26.csv")},
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"]["message"] == "row 18: Unknown type: 'X'"
+    rejected = [r for r in caplog.records if r.name == "blueprints.documents"]
+    assert len(rejected) == 1
+    assert rejected[0].levelno == logging.WARNING
+    assert "GIA_26_08_26.csv" in rejected[0].getMessage()
+    assert "freetrade" in rejected[0].getMessage()
+    assert "row 18: Unknown type: 'X'" in rejected[0].getMessage()
+    api = [r for r in caplog.records if r.name == "api"]
+    assert len(api) == 1
+    assert api[0].levelno == logging.WARNING
+    assert f"POST /api/accounts/{account['id']}/documents -> 400" in api[0].getMessage()
+    assert "Unknown type" in api[0].getMessage()
+
+
+def test_unauthenticated_api_error_logged_at_info(client, caplog):
+    """Routine 401s are logged, but must not be warnings."""
+    import logging
+
+    caplog.set_level(logging.INFO)
+    assert client.get("/api/accounts").status_code == 401
+    api = [r for r in caplog.records if r.name == "api"]
+    assert len(api) == 1
+    assert api[0].levelno == logging.INFO
+    assert "GET /api/accounts -> 401" in api[0].getMessage()

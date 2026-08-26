@@ -4,6 +4,7 @@ Dev:  python app.py   (API on :5002)  +  cd web && npm run dev  (UI on :5173)
 Prod: cd web && npm run build,  then gunicorn serves everything on :5002
 """
 
+import json
 import logging
 import os
 import secrets
@@ -85,6 +86,30 @@ def _refresh_auth_cookie(response):
             auth.set_auth_cookie(response, user["id"], user["email"])
         else:
             response.delete_cookie(auth.COOKIE_NAME)
+    return response
+
+
+@app.after_request
+def _log_api_errors(response):
+    """Log every failed /api response with its reason, so the journal never
+    shows a bare 4xx/5xx access-log line. Client errors are warnings, except the
+    routine ones (unauthenticated, not found) which stay at info."""
+    if not request.path.startswith("/api/") or response.status_code < 400:
+        return response
+    reason = ""
+    if response.is_json:
+        body = response.get_json(silent=True) or {}
+        reason = json.dumps(body.get("error") or body, default=str)[:600]
+    level = (
+        logging.ERROR
+        if response.status_code >= 500
+        else logging.INFO
+        if response.status_code in (401, 404)
+        else logging.WARNING
+    )
+    logging.getLogger("api").log(
+        level, "%s %s -> %s %s", request.method, request.path, response.status_code, reason
+    )
     return response
 
 
