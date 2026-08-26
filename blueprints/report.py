@@ -18,6 +18,12 @@ def _profile_or_none(user_id: int, tax_year: int, bundle: dict) -> dict | None:
     return tax_profile.build_profile(inputs, year, report_view.summary_for_planner(bundle))
 
 
+@bp.get("/years")
+def years():
+    """Tax years the app has constants for — what the year picker offers."""
+    return jsonify({"years": tax_years.configured_years()})
+
+
 @bp.get("/<int:tax_year>")
 def report(tax_year: int):
     run = repo.latest_ok_run(g.user_id, tax_year)

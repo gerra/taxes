@@ -173,3 +173,31 @@ def test_refund_turns_discrepancy_into_info():
     # a refund for a different sale doesn't match
     [n2] = build_notices([DISCREPANCY], [{**refunds[0], "sale_date": "2025-01-01"}])
     assert n2["kind"] == "warning"
+
+
+def test_dated_notices_carry_their_tax_year():
+    [n] = build_notices([DISCREPANCY])
+    assert n["tax_year"] == 2024  # 25 Feb 2025 is in 2024/25
+    [t] = build_notices([TREATY_1])
+    assert t["tax_year"] is None  # engine already limits treaty checks to the reported year
+    [o] = build_notices(["Something odd happened"])
+    assert o["tax_year"] is None
+    [a] = build_notices(["No tax constants for 2021/22 — allowances/rates missing"])
+    assert a["tax_year"] is None
+
+
+def test_generic_engine_message_dated_from_its_text():
+    [n] = build_notices(
+        ["Dividend tax of 5.00 USD for META on 2024-03-01 has no dividend in the 30 days before it"]
+    )
+    assert n["tax_year"] == 2023
+    [n] = build_notices(["Skipping duplicated ERI transaction: X(date=datetime.date(2024, 4, 6))"])
+    assert n["tax_year"] == 2024
+
+
+def test_bnb_grouped_per_tax_year():
+    bnb_3 = "Bed and breakfasting for META. Disposed on 2024-06-03 and acquired again on 2024-06-10"
+    by_key = {n["key"]: n for n in build_notices([BNB_1, BNB_2, bnb_3])}
+    assert set(by_key) == {"bed_and_breakfast__META__2023", "bed_and_breakfast__META__2024"}
+    assert by_key["bed_and_breakfast__META__2023"]["count"] == 2
+    assert by_key["bed_and_breakfast__META__2024"]["tax_year"] == 2024

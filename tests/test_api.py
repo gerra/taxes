@@ -159,3 +159,11 @@ def test_checklist_flags_missing_awards_export(auth_client):
     assert data["needs"] == []
     ind = next(a for a in data["accounts"] if a["account"]["id"] == account["id"])
     assert ind["documents"][0]["warnings"] == []  # explained by the awards doc → hidden
+
+
+def test_report_years_lists_configured_years(auth_client):
+    from core import tax_years
+
+    years = auth_client.get("/api/report/years").get_json()["years"]
+    assert years == sorted(tax_years.YEARS)
+    assert years == sorted(years)

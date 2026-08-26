@@ -72,6 +72,16 @@ def get_year(tax_year: int) -> dict | None:
     return YEARS.get(tax_year)
 
 
+def configured_years() -> list[int]:
+    """Tax years with constants, ascending — the only years the UI offers."""
+    return sorted(YEARS)
+
+
+def tax_year_of(d: date) -> int:
+    """The tax year a calendar date falls in (6 Apr Y – 5 Apr Y+1 -> Y)."""
+    return d.year if d >= date(d.year, 4, 6) else d.year - 1
+
+
 def tax_year_start(tax_year: int) -> date:
     return date(tax_year, 4, 6)
 

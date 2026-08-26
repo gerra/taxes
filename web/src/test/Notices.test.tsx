@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import Notices, { Hl } from '../components/Notices'
 import type { Notice } from '../types'
 
@@ -117,4 +117,69 @@ test('mismatch renders as error with missing answers listed', () => {
 test('Notices renders nothing when empty', () => {
   const { container } = render(<Notices notices={[]} />)
   expect(container.innerHTML).toBe('')
+})
+
+test('notices from other tax years are hidden until "All years" is chosen', () => {
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'amount_adjusted__META__2025-02-25',
+      kind: 'warning',
+      category: 'amount_adjusted',
+      title: 'META sale — tax withheld',
+      tax_year: 2024,
+    },
+    {
+      ...base,
+      key: 'balance',
+      kind: 'warning',
+      category: 'balance',
+      title: 'Cash balance didn’t reconcile',
+      tax_year: null,
+    },
+  ]
+  render(<Notices notices={notices} taxYear={2021} />)
+  expect(screen.queryByText('META sale — tax withheld')).toBeNull()
+  expect(screen.getByText('Cash balance didn’t reconcile')).toBeInTheDocument()
+  expect(screen.getByText('1 warning')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'All years (+1)' }))
+  expect(screen.getByText('META sale — tax withheld')).toBeInTheDocument()
+  expect(screen.getByText('2024/25')).toBeInTheDocument() // year chip on the foreign card
+  expect(screen.getByText('2 warnings')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'This year' }))
+  expect(screen.queryByText('META sale — tax withheld')).toBeNull()
+})
+
+test('no year switcher when everything belongs to the selected year', () => {
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'amount_adjusted__META__2025-02-25',
+      kind: 'warning',
+      category: 'amount_adjusted',
+      title: 'META sale',
+      tax_year: 2024,
+    },
+  ]
+  render(<Notices notices={notices} taxYear={2024} />)
+  expect(screen.getByText('META sale')).toBeInTheDocument()
+  expect(screen.queryByRole('group')).toBeNull()
+})
+
+test('only foreign-year notices shows an empty line plus the switcher', () => {
+  const notices: Notice[] = [
+    {
+      ...base,
+      key: 'amount_adjusted__META__2025-02-25',
+      kind: 'warning',
+      category: 'amount_adjusted',
+      title: 'META sale',
+      tax_year: 2024,
+    },
+  ]
+  render(<Notices notices={notices} taxYear={2021} />)
+  expect(screen.getByText(/Nothing flagged for 2021\/22/)).toBeInTheDocument()
+  expect(screen.queryByText('META sale')).toBeNull()
 })

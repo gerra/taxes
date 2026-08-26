@@ -174,6 +174,8 @@ export interface Verification {
 
 export interface Notice {
   key: string
+  /** Tax year a dated notice belongs to; null = about the run as a whole. */
+  tax_year?: number | null
   data?: Record<string, string>
   verification?: Verification
   resolution?: NoticeResolution | null

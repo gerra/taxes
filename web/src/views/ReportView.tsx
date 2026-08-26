@@ -132,7 +132,7 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
           the gaps in the Documents tab.
         </div>
       )}
-      <Notices notices={view.notices ?? []} onChange={onChange} />
+      <Notices notices={view.notices ?? []} taxYear={view.tax_year} onChange={onChange} />
 
       <TaxDueCard taxDue={view.tax_due} deadline={view.filing_deadline} />
 

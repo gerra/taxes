@@ -29,6 +29,11 @@ export function shortDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// 2024 -> "2024/25"
+export function taxYearLabel(year: number): string {
+  return `${year}/${String((year + 1) % 100).padStart(2, '0')}`
+}
+
 // Last tax year that has fully elapsed (tax year Y = 6 Apr Y to 5 Apr Y+1)
 export function lastElapsedTaxYear(today = new Date()): number {
   const year = today.getFullYear()

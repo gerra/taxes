@@ -1,8 +1,16 @@
 """Turn raw cgt-calc / engine warning strings into structured, human notices.
 
 Each notice: {kind: info|warning|error, category, title, summary,
-occurrences: [str], why, action, count, raw: [str]}. Text fields may contain
-[[value]] tokens — the UI renders those as highlighted pills.
+occurrences: [str], why, action, count, raw: [str], tax_year: int|None}.
+Text fields may contain [[value]] tokens — the UI renders those as highlighted
+pills.
+
+The engine replays the whole transaction history for every run (Section 104
+pools need it), so per-transaction warnings arrive for every year, not just
+the one being reported. `tax_year` is the year a dated notice belongs to; the
+UI hides other years' notices by default. None means the notice is about the
+run as a whole (balance check, allowances, treaty checks — which the engine
+already limits to the reported year).
 
 Unknown messages fall through as a generic warning with the raw text, so
 nothing the engine says is ever hidden."""
@@ -11,6 +19,8 @@ import hashlib
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
+
+from core import tax_years
 
 _DISCREPANCY = re.compile(
     r"Amount discrepancy for \w+\(date=datetime\.date\((\d+), (\d+), (\d+)\)"
@@ -32,12 +42,29 @@ _TREATY = re.compile(
     r"but (-?[\d.]+) was deducted\) for (\S+) ticker"
 )
 
+# Any date the engine tends to print: an ISO date or a repr'd datetime.date.
+_ANY_DATE = re.compile(
+    r"datetime\.date\((\d{4}), (\d{1,2}), (\d{1,2})\)|\b(\d{4})-(\d{2})-(\d{2})\b"
+)
+
 _SYMBOLS = {"USD": "$", "GBP": "£", "EUR": "€"}
 _COUNTRY_CCY = {"USA": "USD", "UK": "GBP"}
 
 
 def _fmt_date(y: str, m: str, d: str) -> str:
     return date(int(y), int(m), int(d)).strftime("%-d %b %Y")
+
+
+def _tax_year_in(text: str) -> int | None:
+    """Tax year of the first date mentioned in an engine message, if any."""
+    m = _ANY_DATE.search(text)
+    if not m:
+        return None
+    parts = [p for p in m.groups() if p is not None]
+    try:
+        return tax_years.tax_year_of(date(int(parts[0]), int(parts[1]), int(parts[2])))
+    except ValueError:
+        return None
 
 
 def _fmt_iso(s: str) -> str:
@@ -128,6 +155,7 @@ def _discrepancy(m: re.Match, raw: str, refunds: list[dict] | None = None) -> di
         action = None
     return {
         "key": f"amount_adjusted__{symbol}__{sale_iso}",
+        "tax_year": tax_years.tax_year_of(date.fromisoformat(sale_iso)),
         "data": {
             "supplied": supplied,
             "calculated": calculated,
@@ -156,7 +184,7 @@ def _discrepancy(m: re.Match, raw: str, refunds: list[dict] | None = None) -> di
 
 def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> list[dict]:
     notices: list[dict] = []
-    bnb: dict[str, dict] = {}
+    bnb: dict[tuple[str, int], dict] = {}
     treaty: dict[str, dict] = {}
 
     for raw in warnings:
@@ -172,10 +200,12 @@ def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> lis
         m = _BNB.search(text)
         if m:
             symbol, sold, rebought = m.groups()
+            year = tax_years.tax_year_of(date.fromisoformat(sold))
             group = bnb.setdefault(
-                symbol,
+                (symbol, year),
                 {
-                    "key": f"bed_and_breakfast__{symbol}",
+                    "key": f"bed_and_breakfast__{symbol}__{year}",
+                    "tax_year": year,
                     "kind": "info",
                     "category": "bed_and_breakfast",
                     "title": f"30-day rule applied to [[{symbol}]]",
@@ -209,6 +239,7 @@ def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> lis
                 symbol,
                 {
                     "key": f"withholding__{symbol}",
+                    "tax_year": None,
                     "kind": "warning",
                     "category": "withholding",
                     "title": f"[[{symbol}]] dividends taxed above the treaty rate",
@@ -244,6 +275,7 @@ def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> lis
             notices.append(
                 {
                     "key": "balance",
+                    "tax_year": None,
                     "kind": "warning",
                     "category": "balance",
                     "title": "Cash balance didn't reconcile",
@@ -264,15 +296,17 @@ def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> lis
             )
             continue
 
+        year = _tax_year_in(text)
         if lowered.startswith("pdf not rendered"):
-            kind, title = "info", "Computation PDF wasn't generated"
+            kind, title, year = "info", "Computation PDF wasn't generated", None
         elif "missing allowance" in lowered or "no tax constants" in lowered:
-            kind, title = "warning", "Tax-year allowances not configured"
+            kind, title, year = "warning", "Tax-year allowances not configured", None
         else:
             kind, title = "warning", text[:90] + ("…" if len(text) > 90 else "")
         notices.append(
             {
                 "key": "other__" + hashlib.sha1(text.encode()).hexdigest()[:10],
+                "tax_year": year,
                 "kind": kind,
                 "category": "other",
                 "title": title,

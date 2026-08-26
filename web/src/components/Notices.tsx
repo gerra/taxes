@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { api } from '../api'
 import { useConfirm } from './ConfirmDialog'
 import type { Notice, VerificationCheck } from '../types'
-import { shortDate } from '../utils/format'
+import { shortDate, taxYearLabel } from '../utils/format'
 
 // Renders text with [[value]] tokens as highlighted pills.
 export function Hl({ text }: { text: string }) {
@@ -88,16 +88,30 @@ function toneFor(notice: Notice): Tone {
   return notice.kind
 }
 
+type Scope = 'year' | 'all'
+
+// The engine replays every year's transactions on each run, so dated notices
+// arrive for all years. Show the selected year's by default; "All years" is
+// one click away and labels each foreign-year card.
 export default function Notices({
   notices,
+  taxYear,
   onChange,
 }: {
   notices: Notice[]
+  taxYear?: number
   onChange?: () => void
 }) {
+  const [scope, setScope] = useState<Scope>('year')
   if (notices.length === 0) return null
-  const verified = notices.filter((n) => n.resolution?.status === 'verified')
-  const open = notices.filter((n) => n.resolution?.status !== 'verified')
+
+  const otherYear = (n: Notice) =>
+    taxYear !== undefined && n.tax_year != null && n.tax_year !== taxYear
+  const hidden = notices.filter(otherYear).length
+  const shown = scope === 'all' ? notices : notices.filter((n) => !otherYear(n))
+
+  const verified = shown.filter((n) => n.resolution?.status === 'verified')
+  const open = shown.filter((n) => n.resolution?.status !== 'verified')
   const counts = open.reduce<Record<string, number>>((acc, n) => {
     acc[n.kind] = (acc[n.kind] ?? 0) + 1
     return acc
@@ -112,15 +126,49 @@ export default function Notices({
       <div className="notices-head">
         <h3>Things to know</h3>
         <span className="muted small">{parts.join(' · ')}</span>
+        {hidden > 0 && (
+          <div className="seg" role="group" aria-label="Which tax years to show">
+            <button
+              type="button"
+              className={scope === 'year' ? 'active' : ''}
+              aria-pressed={scope === 'year'}
+              onClick={() => setScope('year')}
+            >
+              This year
+            </button>
+            <button
+              type="button"
+              className={scope === 'all' ? 'active' : ''}
+              aria-pressed={scope === 'all'}
+              onClick={() => setScope('all')}
+            >
+              All years (+{hidden})
+            </button>
+          </div>
+        )}
       </div>
-      {notices.map((n) => (
-        <NoticeCard key={n.key} notice={n} onChange={onChange} />
+      {shown.length === 0 && taxYear !== undefined && (
+        <p className="muted small notices-empty">
+          Nothing flagged for {taxYearLabel(taxYear)} — {hidden} notice{hidden === 1 ? '' : 's'}{' '}
+          from other years.
+        </p>
+      )}
+      {shown.map((n) => (
+        <NoticeCard key={n.key} notice={n} onChange={onChange} otherYear={otherYear(n)} />
       ))}
     </section>
   )
 }
 
-function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => void }) {
+function NoticeCard({
+  notice,
+  onChange,
+  otherYear = false,
+}: {
+  notice: Notice
+  onChange?: () => void
+  otherYear?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const confirmDialog = useConfirm()
@@ -149,6 +197,11 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
         <div className="notice-title">
           <Hl text={notice.title} />
           {notice.count > 1 && <span className="notice-count">×{notice.count}</span>}
+          {otherYear && notice.tax_year != null && (
+            <span className="badge year" title="From a different tax year">
+              {taxYearLabel(notice.tax_year)}
+            </span>
+          )}
           {res?.status === 'verified' && <span className="badge ok">Verified</span>}
           {res?.status === 'mismatch' && <span className="badge bad">Doesn’t add up</span>}
           {res?.status === 'partial' && <span className="badge warn">Partially checked</span>}

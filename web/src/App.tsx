@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { api } from './api'
 import { useAuth } from './hooks/useAuth'
-import { lastElapsedTaxYear } from './utils/format'
+import { lastElapsedTaxYear, taxYearLabel } from './utils/format'
 import DocumentsView from './views/DocumentsView'
 import LoginView from './views/LoginView'
 import PlannerView from './views/PlannerView'
@@ -10,12 +11,25 @@ const TABS = ['Documents', 'Report', 'Planner'] as const
 type Tab = (typeof TABS)[number]
 
 const CURRENT = lastElapsedTaxYear()
-const YEARS = Array.from({ length: CURRENT - 2019 }, (_, i) => CURRENT - i)
 
 export default function App() {
   const { user, loading, logout } = useAuth()
   const [tab, setTab] = useState<Tab>('Documents')
   const [year, setYear] = useState(CURRENT)
+  // Only years the backend has constants for (core/tax_years.py), newest first,
+  // and never a year that hasn't finished yet.
+  const [years, setYears] = useState<number[]>([CURRENT])
+
+  useEffect(() => {
+    if (!user) return
+    api
+      .get<{ years: number[] }>('/api/report/years')
+      .then((r) => {
+        const usable = r.years.filter((y) => y <= CURRENT).sort((a, b) => b - a)
+        if (usable.length) setYears(usable)
+      })
+      .catch(() => {})
+  }, [user])
 
   if (loading) return <div className="center-page">Loading…</div>
   if (!user) return <LoginView />
@@ -40,9 +54,9 @@ export default function App() {
             onChange={(e) => setYear(Number(e.target.value))}
             title="Tax year (6 Apr – 5 Apr)"
           >
-            {YEARS.map((y) => (
+            {years.map((y) => (
               <option key={y} value={y}>
-                {y}/{String((y + 1) % 100).padStart(2, '0')}
+                {taxYearLabel(y)}
               </option>
             ))}
           </select>
