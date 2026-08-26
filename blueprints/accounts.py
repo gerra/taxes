@@ -1,8 +1,11 @@
 """Account registry + bank column mappings."""
 
+import os
+import shutil
+
 from flask import Blueprint, g, jsonify, request
 
-from core import repo
+from core import paths, repo
 
 bp = Blueprint("accounts", __name__, url_prefix="/api/accounts")
 
@@ -21,6 +24,9 @@ def create_account():
     name = (body.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name is required"}), 400
+    for existing in repo.list_accounts(g.user_id):
+        if existing["type"] == type_ and existing["name"].lower() == name.lower():
+            return jsonify({"error": f"An account '{name}' of this type already exists"}), 409
     account = repo.create_account(g.user_id, type_, name, body.get("first_activity_date"))
     return jsonify(account), 201
 
@@ -45,6 +51,7 @@ def delete_account(account_id: int):
     if not repo.get_account(g.user_id, account_id):
         return jsonify({"error": "Not found"}), 404
     repo.delete_account(g.user_id, account_id)
+    shutil.rmtree(os.path.join(paths.DOCS_DIR, str(account_id)), ignore_errors=True)
     return jsonify({"ok": True})
 
 

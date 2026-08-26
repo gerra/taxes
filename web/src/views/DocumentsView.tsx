@@ -119,6 +119,14 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
     setBusy(false)
   }
 
+  const removeAccount = async () => {
+    const n = coverage.documents.length
+    const what = n > 0 ? ` and its ${n} uploaded document${n === 1 ? '' : 's'}` : ''
+    if (!confirm(`Delete account "${account.name}"${what}? This cannot be undone.`)) return
+    await api.del(`/api/accounts/${account.id}`)
+    onChange()
+  }
+
   const remove = async (docId: number) => {
     if (!confirm('Delete this document?')) return
     await api.del(`/api/documents/${docId}`)
@@ -209,6 +217,9 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
           {busy ? 'Validating…' : 'Upload exports'}
         </button>
         {message && <span className="muted small">{message}</span>}
+        <button className="link danger push-right" onClick={removeAccount}>
+          delete account
+        </button>
       </div>
 
       {mappingNeeded && (
@@ -350,8 +361,11 @@ function AddAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel: ()
   const [name, setName] = useState('')
   const [firstActivity, setFirstActivity] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const save = async () => {
+    if (saving) return
+    setSaving(true)
     try {
       await api.post<Account>('/api/accounts', {
         type,
@@ -361,6 +375,7 @@ function AddAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel: ()
       onDone()
     } catch (e) {
       setError(String(e))
+      setSaving(false)
     }
   }
 
@@ -398,8 +413,8 @@ function AddAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel: ()
       </div>
       {error && <p className="error-text">{error}</p>}
       <div className="card-actions">
-        <button className="btn primary" onClick={save}>
-          Add
+        <button className="btn primary" disabled={saving} onClick={save}>
+          {saving ? 'Adding…' : 'Add'}
         </button>
         <button className="btn" onClick={onCancel}>
           Cancel

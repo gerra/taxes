@@ -612,3 +612,7 @@ select:focus {
   color: var(--muted);
   font-weight: 400;
 }
+
+.push-right {
+  margin-left: auto;
+}

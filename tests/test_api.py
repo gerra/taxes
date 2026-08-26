@@ -55,3 +55,13 @@ def test_checklist_empty(auth_client):
 
 def test_report_404_without_run(auth_client):
     assert auth_client.get("/api/report/2025").status_code == 404
+
+
+def test_duplicate_account_rejected(auth_client):
+    body = {"type": "freetrade_gia", "name": "Freetrade — GIA"}
+    assert auth_client.post("/api/accounts", json=body).status_code == 201
+    assert auth_client.post("/api/accounts", json=body).status_code == 409
+    assert (
+        auth_client.post("/api/accounts", json={**body, "name": "freetrade — gia"}).status_code
+        == 409
+    )
