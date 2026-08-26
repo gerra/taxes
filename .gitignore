@@ -14,3 +14,6 @@ __pycache__/
 .DS_Store
 .coverage
 coverage/
+
+# private ground-truth figures from filed returns
+/.reported-figures.md

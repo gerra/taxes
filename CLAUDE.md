@@ -28,6 +28,8 @@ interfaces — read `00-overview.md` first).
 
 - `make venv install` (uv, Python 3.12), `make test`, `make lint`, `make format`.
 - Run: `.venv/bin/python app.py` + `cd web && npm run dev`.
+- `.reported-figures.md` (git-ignored, laptop only): figures from the returns already
+  filed for 2022/23–2024/25, for regression-checking the tool. Never commit or deploy.
 - cgt-calc dep: fork at github.com/gerra/capital-gains-calculator, branch `gerra`
   (locally: `../capital-gains-calculator`, installed editable into `.venv`, so the
   checkout IS the local engine; the server installs `@gerra` from GitHub).
