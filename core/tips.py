@@ -38,11 +38,20 @@ def pension_headroom(ctx):
             aa - (adjusted_income - y["pension_taper_adjusted_income"]) / 2,
         )
 
+    # Carry-forward: unused allowance from the 3 prior years, each at that
+    # year's own (untapered) allowance — £40k up to 2022/23, £60k since.
     carry_forward = 0.0
+    carried = []  # (tax_year, unused) for years that contribute something
     for i in (1, 2, 3):
         prior = inputs.get(f"pension_prior_{i}")
-        if prior is not None:
-            carry_forward += max(0.0, y["pension_aa"] - float(prior or 0))
+        prior_year = ctx["tax_year"] - i
+        prior_aa = tax_years.pension_aa(prior_year)
+        if prior is None or prior_aa is None:
+            continue
+        unused = max(0.0, prior_aa - float(prior or 0))
+        carry_forward += unused
+        if unused:
+            carried.append((prior_year, unused))
 
     headroom = max(0.0, aa - used) + carry_forward
     if headroom < 100:
@@ -60,11 +69,15 @@ def pension_headroom(ctx):
         + (", boosted by personal-allowance restoration" if profile["bands"]["in_pa_taper"] else "")
         + f"). Annual allowance this year: £{aa:,.0f}"
         + (
-            f" plus £{carry_forward:,.0f} carry-forward from the 3 prior years"
+            f" plus £{carry_forward:,.0f} carry-forward ("
+            + ", ".join(f"£{u:,.0f} from {tax_years.label(py)}" for py, u in carried)
+            + ")"
             if carry_forward
             else ""
         )
-        + ". Assumes prior-year figures you entered are complete.",
+        + ". Carry-forward uses each year's own allowance and assumes your income "
+        "was below the taper threshold in those years and the figures you entered "
+        "for them are complete.",
         headroom * rate,
         deadline=deadline,
     )

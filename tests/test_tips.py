@@ -56,8 +56,28 @@ def test_carry_forward_included():
         "pension_prior_3": 40000,
     }
     tip = _get(build_tips(_ctx(inputs)), "pension_headroom")
-    # this year 50k + carry forward (10k + 0 + 20k) = 80k headroom at 40%
-    assert tip["estimated_win_gbp"] == 80000 * 0.40
+    # this year 50k + carry forward: 2024/25 60k-50k = 10k, 2023/24 60k-60k = 0,
+    # 2022/23 had a £40k allowance so 40k paid leaves 0 → 60k headroom at 40%
+    assert tip["estimated_win_gbp"] == 60000 * 0.40
+    assert "£10,000 from 2024/25" in tip["why"]
+    assert "2022/23" not in tip["why"]
+
+
+def test_carry_forward_uses_that_years_allowance():
+    inputs = {"employment_income": 80000, "pension_employee": 60000, "pension_prior_3": 30000}
+    tip = _get(build_tips(_ctx(inputs)), "pension_headroom")
+    # 2022/23 allowance was £40k, not this year's £60k: 10k unused, not 30k
+    assert tip["estimated_win_gbp"] == 10000 * 0.40
+    assert "£10,000 from 2022/23" in tip["why"]
+
+
+def test_carry_forward_reaches_years_before_constants_start():
+    ctx = _ctx({"employment_income": 80000, "pension_employee": 40000, "pension_prior_3": 15000})
+    ctx["tax_year"], ctx["year"] = 2022, tax_years.get_year(2022)
+    ctx["profile"] = build_profile(ctx["inputs"], ctx["year"], {})
+    tip = _get(build_tips(ctx), "pension_headroom")
+    # 2019/20 allowance £40k → 25k carried; this year (AA 40k) fully used
+    assert tip["estimated_win_gbp"] == 25000 * 0.40
 
 
 def test_withholding_flag():

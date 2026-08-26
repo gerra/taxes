@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { PlannerData, Tip } from '../types'
-import { gbp, pct, shortDate } from '../utils/format'
+import { gbp, pct, shortDate, taxYearLabel } from '../utils/format'
 
-const FIELDS: { key: string; label: string; where: string }[] = [
+// Input fields for the planner; prior-year pension rows are named after the
+// actual tax years so they match a provider's statement.
+const fields = (year: number): { key: string; label: string; where: string }[] => [
   {
     key: 'employment_income',
     label: 'Employment income',
@@ -54,19 +56,18 @@ const FIELDS: { key: string; label: string; where: string }[] = [
   },
   {
     key: 'pension_prior_1',
-    label: 'Pension total, last year',
-    where:
-      'ALL contributions (yours + employer + SIPP gross) in the previous tax year — the pension provider’s annual statement or benefit statement. Needed for carry-forward.',
+    label: `Pension total, ${taxYearLabel(year - 1)}`,
+    where: `ALL contributions (yours + employer + SIPP gross) in the ${taxYearLabel(year - 1)} tax year (6 Apr ${year - 1} – 5 Apr ${year}). Sum the contribution rows between those dates in your pension provider's transaction history — transfers in don't count. Needed for carry-forward.`,
   },
   {
     key: 'pension_prior_2',
-    label: 'Pension total, 2 years ago',
-    where: 'Same, two tax years back. Unused allowance from these years can be carried forward.',
+    label: `Pension total, ${taxYearLabel(year - 2)}`,
+    where: `Same for 6 Apr ${year - 2} – 5 Apr ${year - 1}. Unused allowance from this year can be carried forward.`,
   },
   {
     key: 'pension_prior_3',
-    label: 'Pension total, 3 years ago',
-    where: 'Same, three tax years back — the oldest year carry-forward can reach.',
+    label: `Pension total, ${taxYearLabel(year - 3)}`,
+    where: `Same for 6 Apr ${year - 3} – 5 Apr ${year - 2} — the oldest year carry-forward can reach.`,
   },
 ]
 
@@ -125,7 +126,7 @@ export default function PlannerView({ year }: { year: number }) {
           <i className="info-icon">i</i> next to each field to see which document it comes from.
         </p>
         <div className="planner-grid">
-          {FIELDS.map((f) => (
+          {fields(year).map((f) => (
             <label key={f.key}>
               <span className="label-text">
                 {f.label}

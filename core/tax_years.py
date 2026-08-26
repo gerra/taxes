@@ -72,6 +72,20 @@ def get_year(tax_year: int) -> dict | None:
     return YEARS.get(tax_year)
 
 
+# Carry-forward reaches 3 years back from the earliest configured year, so the
+# annual allowance must resolve for years YEARS doesn't cover. It was £40,000
+# from 2014/15 until it rose to £60,000 in 2023/24.
+_PENSION_AA_40K_YEARS = range(2014, 2023)
+
+
+def pension_aa(tax_year: int) -> int | None:
+    """Untapered pension annual allowance for the year, or None if unknown."""
+    y = YEARS.get(tax_year)
+    if y:
+        return y["pension_aa"]
+    return 40000 if tax_year in _PENSION_AA_40K_YEARS else None
+
+
 def configured_years() -> list[int]:
     """Tax years with constants, ascending — the only years the UI offers."""
     return sorted(YEARS)
