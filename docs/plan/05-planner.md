@@ -26,10 +26,20 @@ actions: "pay £X into your pension before 5 April and save ~£Y". Also the plac
 
 Each is a pure function `(profile, year_constants) -> tip | None`, unit-tested:
 
-1. **Pension headroom**: annual allowance (£60k, tapered above £260k adjusted income,
-   floor £10k) minus contributions, plus carry-forward from the 3 prior years (needs
-   prior-year contributions as inputs); win = contribution × marginal relief rate,
-   with the personal-allowance-restoration bonus called out separately.
+1. **Pension headroom** (`core/pension_aa.py`, Decimal): each year's own allowance
+   (£40k to 2022/23, £60k after) tapered with that year's parameters — only when both
+   threshold income (> £200k) and adjusted income (> £240k/£260k) are exceeded, reduction
+   rounded down to £1, floor £4k/£10k — minus that year's pension input; carry-forward
+   from the 3 prior years, oldest first, replayed chronologically so a prior year's own
+   excess consumes what was available to *it*; only years with scheme membership (a
+   non-zero input) carry. Prior years' pension inputs come from the selected year's
+   "Pension total, YYYY/YY" boxes (or that year's own saved planner); their income
+   comes only from their own saved planner — without it the year is flagged unverified.
+   Open year: suggest a RAS SIPP contribution capped at relevant UK earnings, with the
+   threshold-income hint when tapered; win = contribution × marginal relief rate.
+   Closed year (today > 5 April after it): report the annual-allowance charge, if any
+   (SA101 box 10), and what carries into the next year. The tip's `detail` block shows
+   every step; `warnings` list the input gaps.
 2. **60% trap**: if adjusted net income is in £100,000–£125,140, compute the exact
    pension/Gift Aid amount that restores the personal allowance and the effective
    relief rate (~60%+).
@@ -74,6 +84,8 @@ A disclaimer footer: computed hints, not advice.
 
 ## Open questions
 
-- Carry-forward needs 3 prior years of pension data — collect once in the inputs
-  form, or skip carry-forward in v1 and show AA-only headroom (leaning: collect, it's
-  3 numbers).
+- ~~Carry-forward needs 3 prior years of pension data~~ — resolved: 3 totals on the
+  selected year's form, falling back to earlier years' own saved planners (which also
+  supply the income for their taper test).
+- Prior-year threshold income only sees the salary-sacrifice add-back when that year's
+  own planner has the split; a bare "pension total" is treated as all-employer.

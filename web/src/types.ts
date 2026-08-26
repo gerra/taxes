@@ -298,6 +298,10 @@ export interface Tip {
   estimated_win_gbp: number | null
   deadline: string | null
   confidence: string
+  // "How it was computed": one line per step, shown when the card is expanded.
+  detail: string | null
+  // Gaps in the inputs the figure relies on (e.g. a prior year with no income).
+  warnings: string[]
 }
 
 export interface PlannerData {

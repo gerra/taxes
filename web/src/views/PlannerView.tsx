@@ -28,13 +28,13 @@ const fields = (year: number): { key: string; label: string; where: string }[] =
     key: 'pension_employee',
     label: 'Pension via payroll — yours',
     where:
-      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD” (often labelled “EEs Pension” or “AE Pension EE”), or your workplace pension’s annual statement. Payslips show it as a negative deduction — enter it as a positive number, without the “-”.',
+      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD” (often labelled “EEs Pension” or “AE Pension EE”), or your workplace pension’s annual statement. Payslips show it as a negative deduction — enter it as a positive number, without the “-”. Treated as salary sacrifice: it counts as an employer contribution for the annual allowance and is added back to threshold income for the taper test.',
   },
   {
     key: 'pension_employer',
     label: 'Pension via payroll — employer',
     where:
-      'Employer contributions this tax year: final March payslip → “Employer pension YTD” (often labelled “ERs Pension” or “AE Pension ER”), or the workplace pension’s annual statement. Enter as a positive number. Counts towards the £60,000 annual allowance.',
+      'Employer contributions this tax year: final March payslip → “Employer pension YTD” (often labelled “ERs Pension” or “AE Pension ER”), or the workplace pension’s annual statement. Enter as a positive number. Counts towards the annual allowance (£60,000 since 2023/24, £40,000 before; tapered when adjusted income is over £260,000).',
   },
   {
     key: 'sipp_paid',
@@ -57,12 +57,12 @@ const fields = (year: number): { key: string; label: string; where: string }[] =
   {
     key: 'pension_prior_1',
     label: `Pension total, ${taxYearLabel(year - 1)}`,
-    where: `ALL contributions (yours + employer + SIPP gross) in the ${taxYearLabel(year - 1)} tax year (6 Apr ${year - 1} – 5 Apr ${year}). Sum the contribution rows between those dates in your pension provider's transaction history — transfers in don't count. Needed for carry-forward.`,
+    where: `ALL contributions (yours + employer + SIPP gross) in the ${taxYearLabel(year - 1)} tax year (6 Apr ${year - 1} – 5 Apr ${year}). Sum the contribution rows between those dates in your pension provider's transaction history — transfers in don't count. Needed for carry-forward. Leave blank to use that year's own Planner pension fields instead. Enter that year's income in its own Planner so its taper can be checked — otherwise its carry-forward is flagged as unverified.`,
   },
   {
     key: 'pension_prior_2',
     label: `Pension total, ${taxYearLabel(year - 2)}`,
-    where: `Same for 6 Apr ${year - 2} – 5 Apr ${year - 1}. Unused allowance from this year can be carried forward.`,
+    where: `Same for 6 Apr ${year - 2} – 5 Apr ${year - 1}. Unused allowance from this year can be carried forward; same fallback and income rules as above.`,
   },
   {
     key: 'pension_prior_3',
@@ -255,9 +255,17 @@ function TipCard({ tip }: { tip: Tip }) {
         )}
       </div>
       <p>{tip.what_to_do}</p>
+      {tip.warnings.length > 0 && (
+        <ul className="tip-warnings">
+          {tip.warnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
       {open && (
         <>
           <p className="muted">{tip.why}</p>
+          {tip.detail && <pre className="tip-detail">{tip.detail}</pre>}
           {tip.deadline && <p className="muted small">Deadline: {shortDate(tip.deadline)}</p>}
         </>
       )}

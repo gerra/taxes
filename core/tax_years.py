@@ -72,18 +72,39 @@ def get_year(tax_year: int) -> dict | None:
     return YEARS.get(tax_year)
 
 
-# Carry-forward reaches 3 years back from the earliest configured year, so the
-# annual allowance must resolve for years YEARS doesn't cover. It was £40,000
-# from 2014/15 until it rose to £60,000 in 2023/24.
-_PENSION_AA_40K_YEARS = range(2014, 2023)
+# Pension annual-allowance rules for years YEARS doesn't cover: carry-forward
+# reaches 3 years back from the selected year, and a prior year's own excess can
+# reach 3 further. Threshold-income limit = adjusted-income limit − standard
+# allowance (FA 2004 s228ZA(3)). Sources: s228, s228ZA; HMRC PTM057100.
+_PENSION_HISTORY = (
+    (
+        range(2016, 2020),
+        {"aa": 40000, "threshold_income": 110000, "adjusted_income": 150000, "aa_min": 10000},
+    ),
+    (
+        range(2020, 2023),
+        {"aa": 40000, "threshold_income": 200000, "adjusted_income": 240000, "aa_min": 4000},
+    ),
+)
 
 
-def pension_aa(tax_year: int) -> int | None:
-    """Untapered pension annual allowance for the year, or None if unknown."""
+def pension_rules(tax_year: int) -> dict | None:
+    """Annual allowance and taper parameters for the year, or None if unknown.
+
+    Keys: aa (standard allowance), threshold_income and adjusted_income (taper
+    applies only when BOTH are exceeded), aa_min (the tapered floor)."""
     y = YEARS.get(tax_year)
     if y:
-        return y["pension_aa"]
-    return 40000 if tax_year in _PENSION_AA_40K_YEARS else None
+        return {
+            "aa": y["pension_aa"],
+            "threshold_income": y["pension_taper_threshold_income"],
+            "adjusted_income": y["pension_taper_adjusted_income"],
+            "aa_min": y["pension_aa_min"],
+        }
+    for years, rules in _PENSION_HISTORY:
+        if tax_year in years:
+            return dict(rules)
+    return None
 
 
 def configured_years() -> list[int]:

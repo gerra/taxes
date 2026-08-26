@@ -43,6 +43,25 @@ def _band_slices(
     return slices, cursor
 
 
+def _income_parts(inputs: dict, invest: dict) -> tuple[float, float, float]:
+    """(non-savings, savings, dividends) from planner inputs + report summary."""
+
+    def val(key: str) -> float:
+        return float(inputs.get(key) or 0)
+
+    employment = val("employment_income")  # P60 "pay" — already net of net-pay pension
+    savings = float(invest.get("uk_interest") or 0) + float(invest.get("foreign_interest") or 0)
+    savings += val("other_interest")
+    dividends = float(invest.get("dividends_total") or 0)
+    return employment + val("other_income"), savings, dividends
+
+
+def total_income(inputs: dict, invest: dict) -> float:
+    """Net income before reliefs (ITA 2007 s23 step 2, simplified): employment +
+    other income + interest + dividends. Used for the pension taper tests."""
+    return sum(_income_parts(inputs, invest))
+
+
 def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     """inputs: planner form (floats, may be missing). invest: report summary
     {dividends_total, dividends_taxable, uk_interest, foreign_interest,
@@ -51,16 +70,10 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     def val(key: str) -> float:
         return float(inputs.get(key) or 0)
 
-    employment = val("employment_income")  # P60 "pay" — already net of net-pay pension
-    other_income = val("other_income")
     sipp_gross = val("sipp_paid") / 0.8  # relief at source: HMRC adds 25% of the net payment
     gift_aid_gross = val("gift_aid_paid") / 0.8
 
-    savings = float(invest.get("uk_interest") or 0) + float(invest.get("foreign_interest") or 0)
-    savings += val("other_interest")
-    dividends = float(invest.get("dividends_total") or 0)
-
-    non_savings = employment + other_income
+    non_savings, savings, dividends = _income_parts(inputs, invest)
     total_income = non_savings + savings + dividends
     adjusted_net_income = max(0.0, total_income - sipp_gross - gift_aid_gross)
 

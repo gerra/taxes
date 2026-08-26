@@ -48,6 +48,41 @@ def test_planner_without_report(auth_client):
     assert any(t["id"] == "sixty_trap" for t in data["tips"])
 
 
+def test_planner_pension_uses_prior_year_planners(auth_client):
+    """Prior years' saved planners supply the income for their taper test; the
+    selected year's "Pension total, YYYY/YY" boxes supply the pension inputs."""
+    auth_client.put(
+        "/api/planner/2023/inputs",
+        json={
+            "employment_income": 220031.00,
+            "pension_employee": 3681.41,
+            "pension_employer": 5522.11,
+        },
+    )
+    auth_client.put("/api/planner/2024/inputs", json={"employment_income": 332826.00})
+    auth_client.put(
+        "/api/planner/2025/inputs",
+        json={
+            "employment_income": 376182.79,
+            "pension_employee": 7067.47,
+            "pension_employer": 10601.27,
+            "pension_prior_1": 16987.32,
+            "pension_prior_2": 9203.52,
+            "pension_prior_3": 7509.93,
+        },
+    )
+    try:
+        data = auth_client.get("/api/planner/2025").get_json()
+        tip = next(t for t in data["tips"] if t["id"] == "pension_headroom")
+        assert "= £73,724.49" in tip["detail"]
+        assert "£15,094.00" in tip["detail"]  # 2024/25 tapered from its own planner's income
+        assert [w for w in tip["warnings"] if "2022/23" in w and "unverified" in w]
+        assert not [w for w in tip["warnings"] if "2023/24" in w or "2024/25" in w]
+    finally:
+        for y in (2023, 2024, 2025):
+            auth_client.put(f"/api/planner/{y}/inputs", json={})
+
+
 def test_checklist_empty(auth_client):
     data = auth_client.get("/api/checklist/2025").get_json()
     assert data["overall"] in ("no_accounts", "missing")

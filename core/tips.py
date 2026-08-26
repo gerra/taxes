@@ -1,15 +1,24 @@
 """Tip catalogue: each tip is a pure function (ctx) -> tip dict | None.
 
 ctx = {inputs, year (tax_years constants), profile (tax_profile.build_profile),
-invest (report summary), bundle (full ReportBundle or None), tax_year}.
+invest (report summary), bundle (full ReportBundle or None), tax_year,
+prior_years ({tax_year: {inputs, invest}} for earlier saved planners),
+today (date; lets tests pin the open/closed-year branch)}.
 
 Every tip states its assumptions; the UI renders a disclaimer that these are
-computed hints, not advice."""
+computed hints, not advice. ``detail`` is the "how it was computed" block the
+UI shows on expand; ``warnings`` are gaps in the inputs the figure relies on."""
 
-from core import tax_years
+from datetime import date
+from decimal import Decimal
+
+from core import pension_aa, tax_profile, tax_years
+from core.pension_aa import ZERO, PensionYear, money
 
 
-def _tip(id_, title, what, why, win, deadline=None, confidence="medium"):
+def _tip(
+    id_, title, what, why, win, deadline=None, confidence="medium", detail=None, warnings=None
+):
     return {
         "id": id_,
         "title": title,
@@ -18,68 +27,276 @@ def _tip(id_, title, what, why, win, deadline=None, confidence="medium"):
         "estimated_win_gbp": round(win, 0) if win is not None else None,
         "deadline": deadline,
         "confidence": confidence,
+        "detail": detail,
+        "warnings": warnings or [],
     }
 
 
-def pension_headroom(ctx):
-    y, inputs, profile = ctx["year"], ctx["inputs"], ctx["profile"]
-    ani = profile["income"]["adjusted_net_income"]
-    employer = float(inputs.get("pension_employer") or 0)
-    employee = float(inputs.get("pension_employee") or 0)
-    sipp_gross = float(inputs.get("sipp_paid") or 0) / 0.8
-    used = employer + employee + sipp_gross
+def _gbp(d) -> str:
+    return f"£{d:,.2f}"
 
-    aa = y["pension_aa"]
-    # approx: taper test uses adjusted income ≈ ANI + employer contributions
-    adjusted_income = ani + employer + employee
-    if adjusted_income > y["pension_taper_adjusted_income"]:
-        aa = max(
-            y["pension_aa_min"],
-            aa - (adjusted_income - y["pension_taper_adjusted_income"]) / 2,
+
+# ── Pension annual allowance ───────────────────────────────────────────────────
+
+
+def _ras_gross(inputs: dict) -> Decimal:
+    """Gross relief-at-source contribution: HMRC adds 25% to the net SIPP payment."""
+    return money(money(inputs.get("sipp_paid") or 0) / Decimal("0.8"))
+
+
+def _pension_input_from(inputs: dict) -> Decimal | None:
+    """Total pension input amount from a year's own planner fields, or None if
+    none of them were entered. "Pension via payroll — yours" is salary sacrifice
+    for this user, so it is an employer contribution for allowance purposes."""
+    keys = ("pension_employee", "pension_employer", "sipp_paid")
+    if all(inputs.get(k) is None for k in keys):
+        return None
+    employee = money(inputs.get("pension_employee") or 0)
+    employer = money(inputs.get("pension_employer") or 0)
+    return employee + employer + _ras_gross(inputs)
+
+
+def _pension_years(ctx) -> list[PensionYear]:
+    """Selected year from its inputs + profile; prior years from this year's
+    "Pension total, YYYY/YY" boxes (explicit) or, failing that, the prior year's
+    own saved planner. Income for prior years only ever comes from their own
+    planner — without it the taper can't be checked and the year is unverified.
+    Scheme membership is inferred from a non-zero pension input."""
+    sel, inputs = ctx["tax_year"], ctx["inputs"]
+    prior_years = ctx.get("prior_years") or {}
+    own_input = _pension_input_from(inputs) or ZERO
+    years = [
+        PensionYear(
+            sel,
+            own_input,
+            money(ctx["profile"]["income"]["total"]),
+            sacrifice=money(inputs.get("pension_employee") or 0),
+            ras_gross=_ras_gross(inputs),
+            member=own_input > 0,
+        )
+    ]
+    for back in range(1, 7):
+        ty = sel - back
+        prior = prior_years.get(ty) or {}
+        own = prior.get("inputs") or {}
+        explicit = inputs.get(f"pension_prior_{back}") if back <= 3 else None
+        total = money(explicit) if explicit is not None else _pension_input_from(own)
+        if total is None:
+            continue
+        net = None
+        if own.get("employment_income") is not None:
+            net = money(tax_profile.total_income(own, prior.get("invest") or {}))
+        years.append(
+            PensionYear(
+                ty,
+                total,
+                net,
+                sacrifice=money(own.get("pension_employee") or 0),
+                ras_gross=_ras_gross(own),
+                member=total > 0,
+            )
+        )
+    return years
+
+
+def _allowance_note(r: dict) -> str:
+    if not r["verified"]:
+        return "income not entered — untapered allowance assumed"
+    if r["tapered"]:
+        over = r["adjusted_income"] - r["adjusted_limit"]
+        note = (
+            f"tapered: adjusted income {_gbp(r['adjusted_income'])} is {_gbp(over)} over "
+            f"{_gbp(r['adjusted_limit'])} → −£{r['reduction']:,.0f}"
+        )
+        if r["standard"] - r["reduction"] < r["floor"]:
+            note += f", held at the {_gbp(r['floor'])} floor"
+        return note
+    if r["threshold_income"] <= r["threshold_limit"]:
+        return (
+            f"threshold income {_gbp(r['threshold_income'])} ≤ {_gbp(r['threshold_limit'])} "
+            "— no taper"
+        )
+    return f"adjusted income {_gbp(r['adjusted_income'])} ≤ {_gbp(r['adjusted_limit'])} — no taper"
+
+
+def _pension_detail(res: dict, sel_year: int) -> str:
+    """The workings, one line per step, for the tip's expandable detail."""
+    label = tax_years.label
+    s = res["selected"]
+    lines = [
+        f"Annual allowance {label(sel_year)}: {_gbp(s['allowance'])} "
+        f"(standard {_gbp(s['standard'])}; {_allowance_note(s)})",
+        f"Pension input {label(sel_year)}: {_gbp(s['pension_input'])} → "
+        + (f"{_gbp(s['unused'])} unused" if s["excess"] == 0 else f"{_gbp(s['excess'])} over"),
+        "Carry-forward from earlier years (oldest used first):",
+    ]
+    for ty in (sel_year - 3, sel_year - 2, sel_year - 1):
+        r = res["years"].get(ty)
+        if r is None:
+            lines.append(f"  {label(ty)}: no figure entered")
+            continue
+        if r["excess"] > 0:
+            line = (
+                f"  {label(ty)}: input {_gbp(r['pension_input'])} is {_gbp(r['excess'])} over "
+                f"its {_gbp(r['allowance'])} allowance ({_allowance_note(r)})"
+            )
+            if r["consumed"]:
+                line += " — covered by " + ", ".join(
+                    f"{_gbp(a)} from {label(y)}" for y, a in r["consumed"].items()
+                )
+            if r["charge"] > 0:
+                line += f"; {_gbp(r['charge'])} uncovered"
+        else:
+            line = (
+                f"  {label(ty)}: {_gbp(r['unused'])} unused of {_gbp(r['allowance'])} "
+                f"({_allowance_note(r)})"
+            )
+        eaten = sum(
+            (rr["consumed"].get(ty, ZERO) for y, rr in res["years"].items() if y != sel_year),
+            ZERO,
+        )
+        if eaten > 0:
+            line += f" − {_gbp(eaten)} used by a later year's excess"
+        if not r["member"]:
+            line += " — not a scheme member, nothing carried"
+        lines.append(line + f" → {_gbp(res['carry_available'][ty])} available")
+    lines.append(
+        f"Headroom = {_gbp(s['allowance'])} − {_gbp(s['pension_input'])} + "
+        f"{_gbp(res['carry_total'])} = {_gbp(res['headroom'])}"
+    )
+    if res["unverified_total"] > 0:
+        lines.append(f"  of which {_gbp(res['unverified_total'])} is unverified (see warnings)")
+    if s["consumed"]:
+        lines.append(
+            "Excess covered by: "
+            + ", ".join(f"{_gbp(a)} from {label(y)}" for y, a in s["consumed"].items())
+        )
+    if res["charge"] > 0:
+        lines.append(f"Uncovered excess (annual allowance charge): {_gbp(res['charge'])}")
+    nxt = " · ".join(f"{label(ty)} {_gbp(v)}" for ty, v in res["carry_next"].items())
+    line = f"Into {label(sel_year + 1)}: {nxt} = {_gbp(res['carry_next_total'])}"
+    if res["expired"] > 0:
+        line += f" ({label(sel_year - 3)} remainder {_gbp(res['expired'])} expires 5 Apr {sel_year + 1})"
+    lines.append(line)
+    return "\n".join(lines)
+
+
+def pension_headroom(ctx):
+    sel_year, inputs, profile = ctx["tax_year"], ctx["inputs"], ctx["profile"]
+    today = ctx.get("today") or date.today()
+    res = pension_aa.compute(sel_year, _pension_years(ctx))
+    s = res["selected"]
+    detail = _pension_detail(res, sel_year)
+    warnings = res["warnings"]
+    lab, nxt = tax_years.label(sel_year), tax_years.label(sel_year + 1)
+    rate = profile["marginal"]["effective_rate"]
+    rules = tax_years.pension_rules(sel_year)
+    why = (
+        f"Each year's annual allowance is £{rules['aa']:,} (£40,000 before 2023/24), reduced "
+        f"by £1 for every £2 of adjusted income over £{rules['adjusted_income']:,} — but only "
+        f"when threshold income also exceeds £{rules['threshold_income']:,} — down to a "
+        f"£{rules['aa_min']:,} floor (2020/21–2022/23: £240,000 limit, £4,000 floor). Unused "
+        "allowance carries forward three years, oldest first, only from years you were a "
+        "scheme member; whatever is still over is charged at your marginal rate. Your payroll "
+        "contribution is treated as salary sacrifice (an employer contribution, added back to "
+        "threshold income); relief-at-source SIPP payments are grossed up by 25%."
+    )
+    carry_list = (
+        " · ".join(f"{tax_years.label(ty)} {_gbp(v)}" for ty, v in res["carry_next"].items())
+        or "nothing"
+    )
+    expired_note = (
+        f" {tax_years.label(sel_year - 3)}'s remaining {_gbp(res['expired'])} expired on "
+        f"5 Apr {sel_year + 1}."
+        if res["expired"] > 0
+        else ""
+    )
+    charge_tax = _gbp(res["charge"] * money(rate)) if res["charge"] > 0 else None
+    sa101 = (
+        "declare it on SA101 (Additional information), 'Pension savings tax charges' box 10; "
+        f"the charge is at your marginal rate (~{charge_tax}). Scheme Pays can settle a charge "
+        "over £2,000 from the pension itself"
+    )
+
+    if today > tax_years.tax_year_end(sel_year):
+        if res["charge"] > 0:
+            return _tip(
+                "pension_headroom",
+                f"{lab}: annual allowance charge on {_gbp(res['charge'])}",
+                f"Even after carry-forward, {_gbp(res['charge'])} of {lab} pension input exceeded "
+                f"the allowance — {sa101}. Carried into {nxt}: {carry_list}.{expired_note}",
+                why,
+                None,
+                deadline=tax_years.filing_deadline(sel_year).isoformat(),
+                confidence="high",
+                detail=detail,
+                warnings=warnings,
+            )
+        return _tip(
+            "pension_headroom",
+            f"{lab}: no annual allowance charge; {_gbp(res['carry_next_total'])} carries into {nxt}",
+            f"Nothing to declare for {lab}: pension input {_gbp(s['pension_input'])} was within "
+            f"the {_gbp(s['allowance'])} allowance plus carry-forward (headroom that existed: "
+            f"{_gbp(res['headroom'])}). Unused allowance available in {nxt}: {carry_list}."
+            + expired_note,
+            why,
+            None,
+            confidence="high",
+            detail=detail,
+            warnings=warnings,
         )
 
-    # Carry-forward: unused allowance from the 3 prior years, each at that
-    # year's own (untapered) allowance — £40k up to 2022/23, £60k since.
-    carry_forward = 0.0
-    carried = []  # (tax_year, unused) for years that contribute something
-    for i in (1, 2, 3):
-        prior = inputs.get(f"pension_prior_{i}")
-        prior_year = ctx["tax_year"] - i
-        prior_aa = tax_years.pension_aa(prior_year)
-        if prior is None or prior_aa is None:
-            continue
-        unused = max(0.0, prior_aa - float(prior or 0))
-        carry_forward += unused
-        if unused:
-            carried.append((prior_year, unused))
+    if res["charge"] > 0:
+        return _tip(
+            "pension_headroom",
+            f"Pension input exceeds your allowance by {_gbp(res['charge'])}",
+            f"Even after carry-forward, {_gbp(res['charge'])} is over the allowance: expect an "
+            "annual allowance charge. If you can, reduce salary-sacrifice/employer contributions "
+            f"for the rest of the year; otherwise {sa101}.",
+            why,
+            None,
+            deadline=tax_years.tax_year_end(sel_year).isoformat(),
+            detail=detail,
+            warnings=warnings,
+        )
 
-    headroom = max(0.0, aa - used) + carry_forward
+    headroom = res["headroom"]
     if headroom < 100:
         return None
-    rate = profile["marginal"]["effective_rate"]
-    deadline = tax_years.tax_year_end(ctx["tax_year"]).isoformat()
+    # Personal contributions are capped at relevant UK earnings (or £3,600 gross
+    # for anyone); the rest of the headroom can only be used by an employer.
+    earnings = max(money(inputs.get("employment_income") or 0), money(3600))
+    suggested = min(headroom, earnings)
+    what = (
+        f"Contribute up to {_gbp(suggested)} gross ({_gbp(money(suggested * Decimal('0.8')))} net "
+        f"— HMRC adds 25%) to a relief-at-source SIPP before 5 April {sel_year + 1}."
+    )
+    if suggested < headroom:
+        what += (
+            f" That's capped at your relevant UK earnings ({_gbp(earnings)} employment income); "
+            f"the rest of the {_gbp(headroom)} headroom can only be used by employer contributions."
+        )
+    if s["tapered"]:
+        what += (
+            f" A personal contribution also reduces threshold income ({_gbp(s['threshold_income'])} "
+            f"now); if it fell to {_gbp(s['threshold_limit'])} or below the taper would switch off "
+            f"and the full {_gbp(s['standard'])} allowance would apply — check before settling on "
+            "an amount."
+        )
+    if res["unverified_total"] > 0:
+        what += (
+            f" {_gbp(res['unverified_total'])} of this relies on unverified prior years — see the "
+            "warnings."
+        )
     return _tip(
         "pension_headroom",
-        f"£{headroom:,.0f} of pension annual allowance unused",
-        f"Contribute up to £{headroom:,.0f} (gross) to your SIPP before 5 April. "
-        f"Pay in £{headroom * 0.8:,.0f} net — HMRC adds 25% automatically; any "
-        "higher-rate relief comes back through Self Assessment.",
-        f"Pension contributions get relief at your marginal rate "
-        f"({rate:.0%} effective for you"
-        + (", boosted by personal-allowance restoration" if profile["bands"]["in_pa_taper"] else "")
-        + f"). Annual allowance this year: £{aa:,.0f}"
-        + (
-            f" plus £{carry_forward:,.0f} carry-forward ("
-            + ", ".join(f"£{u:,.0f} from {tax_years.label(py)}" for py, u in carried)
-            + ")"
-            if carry_forward
-            else ""
-        )
-        + ". Carry-forward uses each year's own allowance and assumes your income "
-        "was below the taper threshold in those years and the figures you entered "
-        "for them are complete.",
-        headroom * rate,
-        deadline=deadline,
+        f"{_gbp(headroom)} of pension annual allowance unused",
+        what,
+        why,
+        float(suggested) * rate,
+        deadline=tax_years.tax_year_end(sel_year).isoformat(),
+        detail=detail,
+        warnings=warnings,
     )
 
 

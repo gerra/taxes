@@ -563,6 +563,31 @@ select:focus {
   margin: 10px 0 0;
 }
 
+.tip-warnings {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  color: var(--warn-strong);
+  font-size: 13.5px;
+}
+
+.tip-warnings li + li {
+  margin-top: 3px;
+}
+
+.tip-detail {
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  color: var(--ink);
+}
+
 .disclaimer {
   margin-top: 48px;
   color: var(--muted);
