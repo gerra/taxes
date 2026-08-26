@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
+import { useConfirm } from '../components/ConfirmDialog'
 import type {
   Account,
   AccountCoverage,
   AccountType,
   Checklist,
   DateRange,
+  Doc,
   MappingNeeded,
 } from '../types'
 import { shortDate } from '../utils/format'
@@ -31,7 +33,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 export default function DocumentsView({ year }: { year: number }) {
   const [checklist, setChecklist] = useState<Checklist | null>(null)
   const [error, setError] = useState('')
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState<AccountType | null>(null)
 
   const reload = useCallback(() => {
     api
@@ -58,19 +60,31 @@ export default function DocumentsView({ year }: { year: number }) {
         Capital gains need your <b>full history</b> (the Section 104 pool replays every purchase),
         not just this tax year — upload export chunks until each account shows Complete.
       </p>
+      {checklist.needs.map((n, i) => (
+        <div key={i} className="banner warn needs-banner">
+          <b>Also needed: {TYPE_LABELS[n.type]}</b>
+          {n.because} <span className="muted">{n.instructions}</span>
+          <div className="card-actions">
+            <button className="btn" onClick={() => setAdding(n.type)}>
+              Add this account
+            </button>
+          </div>
+        </div>
+      ))}
       {checklist.accounts.map((c) => (
         <AccountCard key={c.account.id} coverage={c} onChange={reload} />
       ))}
       {adding ? (
         <AddAccountForm
+          initialType={adding}
           onDone={() => {
-            setAdding(false)
+            setAdding(null)
             reload()
           }}
-          onCancel={() => setAdding(false)}
+          onCancel={() => setAdding(null)}
         />
       ) : (
-        <button className="btn" onClick={() => setAdding(true)}>
+        <button className="btn" onClick={() => setAdding('schwab_individual')}>
           + Add account
         </button>
       )}
@@ -86,6 +100,7 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
   const fileRef = useRef<HTMLInputElement>(null)
   const pendingFiles = useRef<File[]>([])
   const status = STATUS[coverage.status]
+  const confirmDialog = useConfirm()
 
   const uploadFiles = async (files: File[]) => {
     if (files.length === 0) return
@@ -121,15 +136,56 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
 
   const removeAccount = async () => {
     const n = coverage.documents.length
-    const what = n > 0 ? ` and its ${n} uploaded document${n === 1 ? '' : 's'}` : ''
-    if (!confirm(`Delete account "${account.name}"${what}? This cannot be undone.`)) return
+    const { ok } = await confirmDialog({
+      title: `Delete “${account.name}”?`,
+      message:
+        n > 0
+          ? `Its ${n} uploaded document${n === 1 ? '' : 's'} will be deleted too. This cannot be undone.`
+          : 'This cannot be undone.',
+      confirmLabel: 'Delete account',
+      danger: true,
+    })
+    if (!ok) return
     await api.del(`/api/accounts/${account.id}`)
     onChange()
   }
 
-  const remove = async (docId: number) => {
-    if (!confirm('Delete this document?')) return
-    await api.del(`/api/documents/${docId}`)
+  const remove = async (doc: Doc) => {
+    const { ok } = await confirmDialog({
+      title: `Delete ${doc.filename}?`,
+      message: `Coverage for ${shortDate(doc.date_min)} → ${shortDate(doc.date_max)} will be lost until you upload it again.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
+    await api.del(`/api/documents/${doc.id}`)
+    onChange()
+  }
+
+  const markEmpty = async (g: DateRange) => {
+    const { ok, input } = await confirmDialog({
+      title: 'No transactions in this period?',
+      message: (
+        <>
+          Confirm there was genuinely nothing — no buys, sells, dividends or interest — between{' '}
+          <b>{shortDate(g.start)}</b> and <b>{shortDate(g.end)}</b>. The period will then count as
+          covered. You can undo this later.
+        </>
+      ),
+      confirmLabel: 'Confirm no activity',
+      input: { label: 'Note (optional)', placeholder: 'e.g. account dormant, nothing held' },
+    })
+    if (!ok) return
+    await api.post(`/api/accounts/${account.id}/no-activity`, {
+      start: g.start,
+      end: g.end,
+      note: input ?? '',
+    })
+    onChange()
+  }
+
+  const unmarkEmpty = async (id: number) => {
+    await api.del(`/api/no-activity/${id}`)
     onChange()
   }
 
@@ -147,24 +203,56 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
 
       <CoverageBar coverage={coverage} />
 
-      {(coverage.gaps.length > 0 || coverage.soft_gaps.length > 0) && (
-        <div className="gaps">
+      {(coverage.gaps.length > 0 ||
+        coverage.soft_gaps.length > 0 ||
+        coverage.confirmed_empty.length > 0) && (
+        <div className="gap-list">
           {coverage.gaps.map((g, i) => (
-            <div
-              key={i}
-              className="gap-row tip-wrap"
-              data-tip={`No uploaded document contains transactions between ${shortDate(g.start)} and ${shortDate(g.end)} (${gapDays(g)} days). The Section 104 pool needs your full history, so the calculation may be wrong until this period is covered.\n\nHow to get it: ${coverage.instructions}`}
-            >
-              Missing <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>
+            <div key={i} className="gap-item">
+              <span
+                className="gap-row tip-wrap"
+                data-tip={`No uploaded document contains transactions between ${shortDate(g.start)} and ${shortDate(g.end)} (${gapDays(g)} days). The Section 104 pool needs your full history, so the calculation may be wrong until this period is covered — unless there genuinely was no activity, in which case confirm that.\n\nHow to get it: ${coverage.instructions}`}
+              >
+                Missing <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>{' '}
+                <span className="muted">({gapDays(g)} days)</span>
+              </span>
+              <div className="gap-actions">
+                <button className="link primary" onClick={() => fileRef.current?.click()}>
+                  Upload export
+                </button>
+                <button className="link" onClick={() => markEmpty(g)}>
+                  No transactions then
+                </button>
+              </div>
             </div>
           ))}
           {coverage.soft_gaps.map((g, i) => (
-            <div
-              key={`s${i}`}
-              className="gap-row soft tip-wrap"
-              data-tip={`Small seam between documents: ${shortDate(g.start)} → ${shortDate(g.end)} (${gapDays(g)} days). Short breaks like this are usually just days with no transactions — only re-export if you traded then.`}
-            >
-              Small seam <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>
+            <div key={`s${i}`} className="gap-item">
+              <span
+                className="gap-row soft tip-wrap"
+                data-tip={`Small seam between documents: ${shortDate(g.start)} → ${shortDate(g.end)} (${gapDays(g)} days). Short breaks like this are usually just days with no transactions — only re-export if you traded then.`}
+              >
+                Small seam <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>{' '}
+                <span className="muted">({gapDays(g)} days)</span>
+              </span>
+              <div className="gap-actions">
+                <button className="link" onClick={() => markEmpty(g)}>
+                  No transactions then
+                </button>
+              </div>
+            </div>
+          ))}
+          {coverage.confirmed_empty.map((e) => (
+            <div key={`e${e.id}`} className="gap-item empty">
+              <span className="gap-label">
+                No activity <b>{shortDate(e.start)}</b> → <b>{shortDate(e.end)}</b>
+                {e.note && <span className="muted small"> · {e.note}</span>}
+              </span>
+              <div className="gap-actions">
+                <button className="link" onClick={() => unmarkEmpty(e.id)}>
+                  Undo
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -192,8 +280,8 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
                   )}
                 </td>
                 <td>
-                  <button className="link danger" onClick={() => remove(d.id)}>
-                    delete
+                  <button className="link danger" onClick={() => remove(d)}>
+                    Delete
                   </button>
                 </td>
               </tr>
@@ -218,7 +306,7 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
         </button>
         {message && <span className="muted small">{message}</span>}
         <button className="link danger push-right" onClick={removeAccount}>
-          delete account
+          Delete account
         </button>
       </div>
 
@@ -254,8 +342,12 @@ function CoverageBar({ coverage }: { coverage: AccountCoverage }) {
     return { left: `${((a - start) / span) * 100}%`, width: `${((b - a) / span) * 100}%` }
   }
   return (
-    <div className="coverage" title="Green = covered by uploaded documents; amber = missing">
+    <div className="coverage">
       <div className="coverage-bar">
+        {coverage.confirmed_empty.map((r) => {
+          const pos = seg(r.start, r.end)
+          return pos ? <div key={`e${r.id}`} className="coverage-empty" style={pos} /> : null
+        })}
         {coverage.covered.map((r, i) => {
           const pos = seg(r.start, r.end)
           return pos ? <div key={i} className="coverage-fill" style={pos} /> : null
@@ -263,6 +355,22 @@ function CoverageBar({ coverage }: { coverage: AccountCoverage }) {
       </div>
       <div className="coverage-labels">
         <span>{shortDate(coverage.required.start)}</span>
+        <span className="coverage-legend">
+          <span>
+            <i style={{ background: 'var(--mint)' }} />
+            documents
+          </span>
+          {coverage.confirmed_empty.length > 0 && (
+            <span>
+              <i className="swatch-empty" />
+              confirmed no activity
+            </span>
+          )}
+          <span>
+            <i style={{ background: 'var(--amber-soft)', border: '1px solid #ead9a8' }} />
+            missing
+          </span>
+        </span>
         <span>{shortDate(coverage.required.end)}</span>
       </div>
     </div>
@@ -356,8 +464,16 @@ function MappingForm({
   )
 }
 
-function AddAccountForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
-  const [type, setType] = useState<AccountType>('schwab_individual')
+function AddAccountForm({
+  initialType,
+  onDone,
+  onCancel,
+}: {
+  initialType: AccountType
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const [type, setType] = useState<AccountType>(initialType)
   const [name, setName] = useState('')
   const [firstActivity, setFirstActivity] = useState('')
   const [error, setError] = useState('')

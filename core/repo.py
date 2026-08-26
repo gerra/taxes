@@ -111,6 +111,10 @@ def delete_account(user_id: int, account_id: int) -> None:
             "DELETE FROM documents WHERE account_id = ? AND user_id = ?", (account_id, user_id)
         )
         conn.execute("DELETE FROM column_mappings WHERE account_id = ?", (account_id,))
+        conn.execute(
+            "DELETE FROM coverage_overrides WHERE account_id = ? AND user_id = ?",
+            (account_id, user_id),
+        )
         conn.execute("DELETE FROM accounts WHERE id = ? AND user_id = ?", (account_id, user_id))
         conn.commit()
     finally:
@@ -403,6 +407,49 @@ def delete_resolution(user_id: int, key: str) -> None:
     conn = get_conn()
     try:
         conn.execute("DELETE FROM notice_resolutions WHERE user_id = ? AND key = ?", (user_id, key))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Coverage overrides ("no activity in this period") ──────────────────────────
+
+
+def list_coverage_overrides(user_id: int, account_id: int) -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM coverage_overrides WHERE user_id = ? AND account_id = ? ORDER BY start",
+            (user_id, account_id),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_coverage_override(user_id: int, account_id: int, start: str, end: str, note: str) -> dict:
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            "INSERT INTO coverage_overrides (user_id, account_id, start, end, note) VALUES (?, ?, ?, ?, ?)",
+            (user_id, account_id, start, end, note),
+        )
+        conn.commit()
+        return dict(
+            conn.execute(
+                "SELECT * FROM coverage_overrides WHERE id = ?", (cur.lastrowid,)
+            ).fetchone()
+        )
+    finally:
+        conn.close()
+
+
+def delete_coverage_override(user_id: int, override_id: int) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "DELETE FROM coverage_overrides WHERE id = ? AND user_id = ?", (override_id, user_id)
+        )
         conn.commit()
     finally:
         conn.close()

@@ -1039,3 +1039,243 @@ select:focus {
 .req {
   color: var(--coral);
 }
+
+/* ── Modal ─────────────────────────────────────────────────────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(25, 21, 33, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fade-in 0.12s ease-out;
+}
+
+.modal {
+  background: var(--panel);
+  border-radius: 22px;
+  padding: 26px 28px 22px;
+  width: min(440px, calc(100vw - 32px));
+  box-shadow:
+    0 24px 60px rgba(25, 21, 33, 0.22),
+    0 2px 6px rgba(25, 21, 33, 0.08);
+  animation: pop-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.modal h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.modal-message {
+  color: #3b3646;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.modal-input {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.btn.primary.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
+.btn.primary.danger:hover {
+  background: #b92c36;
+  border-color: #b92c36;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Action links (uniform baseline) ───────────────────────────────────── */
+
+.notice-actions button.link,
+.gap-actions button.link,
+.doc-table button.link {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+.notice-actions button.link:hover,
+.gap-actions button.link:hover,
+.doc-table button.link:hover {
+  opacity: 1;
+}
+
+.notice-actions button.link.primary,
+.gap-actions button.link.primary {
+  color: var(--coral);
+  opacity: 1;
+}
+
+.notice-actions button.link.danger,
+.doc-table button.link.danger {
+  color: var(--bad);
+  opacity: 0.85;
+}
+
+.notice-more {
+  margin: 0 !important;
+}
+
+/* ── Gaps: rows with actions, confirmed-empty ranges ───────────────────── */
+
+.gap-list {
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gap-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.gap-item .gap-row {
+  margin: 0;
+}
+
+.gap-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.gap-item.empty .gap-label {
+  color: var(--muted);
+}
+
+.coverage-empty,
+.swatch-empty {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--mint) 0 4px,
+    rgba(15, 168, 126, 0.35) 4px 8px
+  );
+}
+
+.coverage-empty {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.coverage-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.coverage-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+
+.needs-banner b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.needs-banner .card-actions {
+  margin-top: 8px;
+}
+
+/* ── Label with required mark / info icon ──────────────────────────────── */
+
+.label-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.req {
+  color: var(--coral);
+  font-weight: 700;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(25, 21, 33, 0.08);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  font-family: var(--font-body);
+  cursor: help;
+  flex: 0 0 auto;
+}
+
+.info-icon:hover {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.planner-grid .tip-wrap:hover::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: -8px;
+  max-width: 320px;
+}
+
+.planner-grid .tip-wrap:hover::before {
+  bottom: auto;
+  top: calc(100% + 2px);
+  left: 2px;
+  border-top-color: transparent;
+  border-bottom-color: var(--ink);
+}

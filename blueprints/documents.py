@@ -114,3 +114,30 @@ def add_spin_off():
         return jsonify({"error": "dst and src are required"}), 400
     repo.upsert_spin_off(g.user_id, dst, src)
     return jsonify({"ok": True}), 201
+
+
+@bp.post("/api/accounts/<int:account_id>/no-activity")
+def add_no_activity(account_id: int):
+    """User confirms an account had no transactions in [start, end] — counts as covered."""
+    from datetime import date
+
+    if not repo.get_account(g.user_id, account_id):
+        return jsonify({"error": "Not found"}), 404
+    body = request.get_json(force=True)
+    try:
+        start = date.fromisoformat(body.get("start", ""))
+        end = date.fromisoformat(body.get("end", ""))
+    except ValueError:
+        return jsonify({"error": "start and end must be ISO dates"}), 400
+    if end < start:
+        return jsonify({"error": "end must be on or after start"}), 400
+    row = repo.add_coverage_override(
+        g.user_id, account_id, start.isoformat(), end.isoformat(), (body.get("note") or "").strip()
+    )
+    return jsonify(row), 201
+
+
+@bp.delete("/api/no-activity/<int:override_id>")
+def delete_no_activity(override_id: int):
+    repo.delete_coverage_override(g.user_id, override_id)
+    return jsonify({"ok": True})

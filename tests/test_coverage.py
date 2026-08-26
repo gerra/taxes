@@ -64,3 +64,27 @@ def test_bank_account_only_needs_tax_year():
     result = account_coverage(account, docs, 2024)
     assert result["status"] == "ok"
     assert result["required"]["start"] == "2024-04-06"
+
+
+def test_confirmed_no_activity_closes_gap():
+    account = {
+        "id": 3,
+        "type": "schwab_individual",
+        "name": "S",
+        "first_activity_date": "2022-01-01",
+    }
+    docs = [
+        {"date_min": "2022-01-01", "date_max": "2022-12-31", "warnings": []},
+        {"date_min": "2024-01-01", "date_max": "2026-12-31", "warnings": []},
+    ]
+    without = account_coverage(account, docs, 2024)
+    assert without["status"] == "gaps"
+    assert without["gaps"] == [{"start": "2023-01-01", "end": "2023-12-31"}]
+
+    overrides = [{"id": 9, "start": "2023-01-01", "end": "2023-12-31", "note": "no trades"}]
+    with_override = account_coverage(account, docs, 2024, overrides)
+    assert with_override["status"] == "ok"
+    assert with_override["gaps"] == []
+    assert with_override["confirmed_empty"][0]["id"] == 9
+    # documents-only coverage still reported separately for the bar
+    assert len(with_override["covered"]) == 2

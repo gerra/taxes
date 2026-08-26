@@ -3,18 +3,71 @@ import { api } from '../api'
 import type { PlannerData, Tip } from '../types'
 import { gbp, pct, shortDate } from '../utils/format'
 
-const FIELDS: { key: string; label: string; hint?: string }[] = [
-  { key: 'employment_income', label: 'Employment income (P60 “pay”)' },
-  { key: 'other_income', label: 'Other taxable income' },
-  { key: 'other_interest', label: 'Interest not in the report (other banks)' },
-  { key: 'pension_employee', label: 'Pension via payroll — your contributions' },
-  { key: 'pension_employer', label: 'Pension via payroll — employer contributions' },
-  { key: 'sipp_paid', label: 'SIPP paid personally (net)', hint: 'HMRC adds 25% on top' },
-  { key: 'gift_aid_paid', label: 'Gift Aid donations (net)' },
-  { key: 'isa_used', label: 'ISA allowance already used this year' },
-  { key: 'pension_prior_1', label: 'Pension total, last year', hint: 'for carry-forward' },
-  { key: 'pension_prior_2', label: 'Pension total, 2 years ago' },
-  { key: 'pension_prior_3', label: 'Pension total, 3 years ago' },
+const FIELDS: { key: string; label: string; where: string }[] = [
+  {
+    key: 'employment_income',
+    label: 'Employment income',
+    where:
+      'P60 (your employer issues it by 31 May) → “Pay” in the “Pay and Income Tax details” box. Or the final March payslip → “Taxable pay YTD”. This is already net of net-pay pension contributions.',
+  },
+  {
+    key: 'other_income',
+    label: 'Other taxable income',
+    where:
+      'Self-employment profit, rental income, taxable benefits — anything else HMRC taxes as income. Leave 0 if none.',
+  },
+  {
+    key: 'other_interest',
+    label: 'Interest not in the report',
+    where:
+      'Interest from banks you haven’t uploaded statements for. Each bank shows an annual interest summary: HSBC app → account → Statements → “Interest” / annual tax summary; Revolut app → Statements → “Interest paid”.',
+  },
+  {
+    key: 'pension_employee',
+    label: 'Pension via payroll — yours',
+    where:
+      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD”, or your workplace pension’s annual statement.',
+  },
+  {
+    key: 'pension_employer',
+    label: 'Pension via payroll — employer',
+    where:
+      'Employer contributions this tax year: payslip “Employer pension YTD”, or the workplace pension’s annual statement. Counts towards the £60,000 annual allowance.',
+  },
+  {
+    key: 'sipp_paid',
+    label: 'SIPP paid personally (net)',
+    where:
+      'What you actually transferred into a personal pension/SIPP this tax year — the provider’s contribution history. Enter the net amount; HMRC adds 25% on top automatically.',
+  },
+  {
+    key: 'gift_aid_paid',
+    label: 'Gift Aid donations (net)',
+    where:
+      'Donations where you ticked Gift Aid — charity receipts, JustGiving/GoFundMe history, payroll-giving excluded.',
+  },
+  {
+    key: 'isa_used',
+    label: 'ISA allowance used this year',
+    where:
+      'Total paid into ISAs (cash + stocks & shares) since 6 April: ISA provider app → “Subscriptions this tax year” / allowance remaining.',
+  },
+  {
+    key: 'pension_prior_1',
+    label: 'Pension total, last year',
+    where:
+      'ALL contributions (yours + employer + SIPP gross) in the previous tax year — the pension provider’s annual statement or benefit statement. Needed for carry-forward.',
+  },
+  {
+    key: 'pension_prior_2',
+    label: 'Pension total, 2 years ago',
+    where: 'Same, two tax years back. Unused allowance from these years can be carried forward.',
+  },
+  {
+    key: 'pension_prior_3',
+    label: 'Pension total, 3 years ago',
+    where: 'Same, three tax years back — the oldest year carry-forward can reach.',
+  },
 ]
 
 export default function PlannerView({ year }: { year: number }) {
@@ -67,17 +120,29 @@ export default function PlannerView({ year }: { year: number }) {
 
       <section className="card">
         <h3>Your income & contributions</h3>
+        <p className="muted small">
+          All figures for the selected tax year (6 Apr – 5 Apr). Hover the{' '}
+          <i className="info-icon">i</i> next to each field to see which document it comes from.
+        </p>
         <div className="planner-grid">
           {FIELDS.map((f) => (
             <label key={f.key}>
-              {f.label}
+              <span className="label-text">
+                {f.label}
+                <i
+                  className="info-icon tip-wrap"
+                  data-tip={f.where}
+                  aria-label="Where to find this"
+                >
+                  i
+                </i>
+              </span>
               <input
                 type="number"
                 inputMode="decimal"
                 placeholder="0"
                 value={inputs[f.key] ?? ''}
                 onChange={(e) => setInputs({ ...inputs, [f.key]: e.target.value })}
-                title={f.hint}
               />
             </label>
           ))}

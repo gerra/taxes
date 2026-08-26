@@ -105,9 +105,14 @@ def run_validate(job: dict) -> dict:
         stats = _tx_stats(transactions)
         if misses:
             warnings.append(
-                f"{len(misses)} stock-plan rows need the Equity Awards document "
-                f"for vest prices ({', '.join(misses[:3])}" + (", …)" if len(misses) > 3 else ")")
+                f"{len(misses)} RSU vest rows (stock-plan activity: "
+                f"{', '.join(misses[:3])}{', …' if len(misses) > 3 else ''}) have no price "
+                "in this file — it comes from the Equity Awards export. Add a "
+                "'Schwab — Equity Awards' account and upload that export; this note "
+                "disappears once it's there."
             )
+        # The library's own "No Schwab Award file provided" is the same fact, said worse.
+        handler.messages = [m for m in handler.messages if "schwab award file" not in m.lower()]
     elif account_type == "schwab_awards":
         if path.suffix.lower() == ".json":
             transactions = SchwabEquityAwardsJSONParser.load_from_file(path)

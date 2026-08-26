@@ -32,14 +32,26 @@ export interface DateRange {
   end: string
 }
 
+export interface ConfirmedEmpty extends DateRange {
+  id: number
+  note: string
+}
+
 export interface AccountCoverage {
   account: Account
   documents: Doc[]
   required: DateRange
   covered: DateRange[]
+  confirmed_empty: ConfirmedEmpty[]
   gaps: DateRange[]
   soft_gaps: DateRange[]
   status: 'ok' | 'gaps' | 'missing'
+  instructions: string
+}
+
+export interface ChecklistNeed {
+  type: AccountType
+  because: string
   instructions: string
 }
 
@@ -50,6 +62,7 @@ export interface Checklist {
   year_end: string
   filing_deadline: string
   accounts: AccountCoverage[]
+  needs: ChecklistNeed[]
   overall: 'ok' | 'gaps' | 'missing' | 'no_accounts'
 }
 

@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS column_mappings (
     mapping     TEXT NOT NULL  -- JSON: {date, description, amount, currency, interest_match}
 );
 
+CREATE TABLE IF NOT EXISTS coverage_overrides (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    account_id  INTEGER NOT NULL REFERENCES accounts(id),
+    start       TEXT NOT NULL,   -- ISO date: user confirms no transactions in [start, end]
+    end         TEXT NOT NULL,
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS notice_resolutions (
     user_id        INTEGER NOT NULL REFERENCES users(id),
     key            TEXT NOT NULL,     -- stable notice key, e.g. amount_adjusted__META__2025-02-25

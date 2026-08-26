@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { api } from '../api'
+import { useConfirm } from './ConfirmDialog'
 import type { Notice, VerificationCheck } from '../types'
 import { shortDate } from '../utils/format'
 
@@ -122,13 +123,21 @@ export default function Notices({
 function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => void }) {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const confirmDialog = useConfirm()
   const res = notice.resolution ?? null
   const tone = toneFor(notice)
   const hasMore = Boolean(notice.why || notice.raw.length)
   const canVerify = Boolean(onChange) && notice.kind !== 'info'
 
   const remove = async () => {
-    if (!confirm('Remove this verification and its attached evidence?')) return
+    const { ok } = await confirmDialog({
+      title: 'Remove this verification?',
+      message:
+        'Your answers and the attached evidence will be deleted; the notice goes back to unverified.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
     await api.del(`/api/notices/${notice.key}`)
     onChange?.()
   }
@@ -197,7 +206,7 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
 
         <div className="notice-actions">
           {canVerify && !editing && (
-            <button className="link" onClick={() => setEditing(true)}>
+            <button className={`link ${res ? '' : 'primary'}`} onClick={() => setEditing(true)}>
               {res ? 'Edit answers' : 'Verify this'}
             </button>
           )}
@@ -313,8 +322,10 @@ function VerifyForm({
                 </label>
               ) : (
                 <label key={f.key}>
-                  {f.label}
-                  {f.required && <span className="req"> *</span>}
+                  <span className="label-text">
+                    {f.label}
+                    {f.required && <span className="req">*</span>}
+                  </span>
                   {f.type === 'choice' ? (
                     <select
                       value={values[f.key] ?? ''}

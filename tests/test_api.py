@@ -94,3 +94,68 @@ def test_notice_resolution_roundtrip(auth_client):
 
     assert auth_client.delete(f"/api/notices/{key}").status_code == 200
     assert auth_client.get(f"/api/notices/{key}/evidence").status_code == 404
+
+
+def test_no_activity_roundtrip(auth_client):
+    account = auth_client.post(
+        "/api/accounts",
+        json={"type": "schwab_individual", "name": "Gap test", "first_activity_date": "2020-01-01"},
+    ).get_json()
+    bad = auth_client.post(
+        f"/api/accounts/{account['id']}/no-activity",
+        json={"start": "2021-01-01", "end": "2020-01-01"},
+    )
+    assert bad.status_code == 400
+    ok = auth_client.post(
+        f"/api/accounts/{account['id']}/no-activity",
+        json={"start": "2020-01-01", "end": "2020-06-30", "note": "account opened, nothing bought"},
+    )
+    assert ok.status_code == 201
+    override_id = ok.get_json()["id"]
+    item = next(
+        a
+        for a in auth_client.get("/api/checklist/2025").get_json()["accounts"]
+        if a["account"]["id"] == account["id"]
+    )
+    assert item["confirmed_empty"][0]["id"] == override_id
+    assert auth_client.delete(f"/api/no-activity/{override_id}").status_code == 200
+
+
+def test_checklist_flags_missing_awards_export(auth_client):
+    from core import repo
+
+    account = auth_client.post(
+        "/api/accounts", json={"type": "schwab_individual", "name": "Needs awards"}
+    ).get_json()
+    repo.create_document(
+        auth_client.user["id"],
+        account["id"],
+        "ind.csv",
+        "sha-needs",
+        10,
+        5,
+        "2024-01-01",
+        "2024-12-31",
+        ["3 RSU vest rows (stock-plan activity: META on 2024-05-16) have no price"],
+    )
+    data = auth_client.get("/api/checklist/2024").get_json()
+    assert data["needs"] and data["needs"][0]["type"] == "schwab_awards"
+
+    awards = auth_client.post(
+        "/api/accounts", json={"type": "schwab_awards", "name": "Awards"}
+    ).get_json()
+    repo.create_document(
+        auth_client.user["id"],
+        awards["id"],
+        "eac.csv",
+        "sha-eac",
+        10,
+        5,
+        "2024-01-01",
+        "2024-12-31",
+        [],
+    )
+    data = auth_client.get("/api/checklist/2024").get_json()
+    assert data["needs"] == []
+    ind = next(a for a in data["accounts"] if a["account"]["id"] == account["id"])
+    assert ind["documents"][0]["warnings"] == []  # explained by the awards doc → hidden
