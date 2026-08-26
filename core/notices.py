@@ -182,8 +182,100 @@ def _discrepancy(m: re.Match, raw: str, refunds: list[dict] | None = None) -> di
     }
 
 
-def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> list[dict]:
-    notices: list[dict] = []
+def _exempt_notices(exempt: dict | None, tax_year: int | None) -> list[dict]:
+    """What the engine did with gilts and T-bills, and the Accrued Income Scheme
+    flag. `exempt` is bundle["exempt"] from the worker."""
+    if not exempt or not exempt.get("securities"):
+        return []
+    out: list[dict] = []
+    securities = exempt["securities"]
+    kinds = {"gilt": "gilt", "tbill": "UK Treasury bill", "manual": "marked by you"}
+    out.append(
+        {
+            "key": "exempt_securities",
+            "tax_year": None,
+            "kind": "info",
+            "category": "exempt",
+            "title": "Gilts and T-bills treated as exempt from capital gains tax",
+            "summary": (
+                "Disposals of these securities are listed in the report but left out of "
+                "the SA108 figures — gains on them are not chargeable and losses are not "
+                "allowable (TCGA 1992 s115)."
+            ),
+            "occurrences": [
+                f"[[{s['symbol']}]] — {s.get('title') or kinds.get(s['kind'], s['kind'])}"
+                + (f" ({s['isin']})" if s.get("isin") else "")
+                + (" — recognised by name" if s["source"] == "detected" else "")
+                for s in securities
+            ],
+            "why": (
+                "Gilt-edged securities and UK Treasury bills are exempt assets. The tool "
+                "recognises them by their name and GB ISIN in the broker export; anything it "
+                "cannot see can be added by ticker or ISIN under Documents → CGT-exempt "
+                "securities. Interest on gilts is still taxable as interest."
+            ),
+            "action": (
+                "A T-bill's return is the discount at maturity, taxed as income (deeply "
+                "discounted securities), not a gain — brokers rarely export the maturity, "
+                "so check your statements for it."
+                if any(s["kind"] == "tbill" for s in securities)
+                else None
+            ),
+            "count": len(securities),
+            "raw": [],
+        }
+    )
+    if exempt.get("ais_applies"):
+        limit = Decimal(exempt.get("ais_limit") or "5000")
+        peak = Decimal(exempt.get("ais_nominal_peak") or "0")
+        lines = []
+        for a in exempt.get("accrued_interest", []):
+            if tax_years.tax_year_of(date.fromisoformat(a["date"])) != tax_year:
+                continue
+            verb = "paid on the purchase" if a["side"] == "purchase" else "received on the sale"
+            lines.append(
+                f"[[{_money(a['amount'], a['currency'])}]] accrued interest {verb} of "
+                f"[[{a['symbol']}]] on [[{_fmt_iso(a['date'])}]]"
+            )
+        out.append(
+            {
+                "key": "accrued_income_scheme",
+                "tax_year": tax_year,
+                "kind": "warning",
+                "category": "accrued_income",
+                "title": "Accrued Income Scheme may apply to your gilt trades",
+                "summary": (
+                    f"You held up to [[£{peak:,.2f}]] nominal of gilts this year, over the "
+                    f"[[£{limit:,.0f}]] limit, so interest accrued at the time of each purchase "
+                    "and sale is taxed as income rather than being ignored. Not computed here."
+                ),
+                "occurrences": lines,
+                "why": (
+                    "A gilt trades at a dirty price: the cash paid or received includes the "
+                    "coupon accrued since the last payment date. Accrued interest paid on a "
+                    "purchase is relief; accrued interest received on a sale is a charge — "
+                    "both taxed as interest in the year of the next interest payment date "
+                    "(ITA 2007 Part 12; HS343)."
+                ),
+                "action": (
+                    "Add the net accrued interest (received minus paid) to your untaxed UK "
+                    "interest for the year of the next coupon date, or deduct it if net paid. "
+                    "The amounts above are the engine's estimates from the dirty price."
+                ),
+                "count": len(lines),
+                "raw": [],
+            }
+        )
+    return out
+
+
+def build_notices(
+    warnings: list[str],
+    refunds: list[dict] | None = None,
+    exempt: dict | None = None,
+    tax_year: int | None = None,
+) -> list[dict]:
+    notices: list[dict] = _exempt_notices(exempt, tax_year)
     bnb: dict[tuple[str, int], dict] = {}
     treaty: dict[str, dict] = {}
 

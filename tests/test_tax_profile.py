@@ -54,3 +54,19 @@ def test_sipp_extends_band_and_restores_pa():
     assert p["allowances"]["personal_allowance"] == pytest.approx(2570)
     assert p["bands"]["basic_top"] == pytest.approx(47700)
     assert p["bands"]["in_pa_taper"]
+
+
+def test_other_income_taxed_at_marginal_rate_less_credit():
+    # £80.76 of PIDs/fees on top of £60k employment: 40% = 32.30, less 16.13 withheld
+    p = build_profile(
+        {"employment_income": 60000}, Y, {"other_income": 80.76, "other_income_tax": 16.13}
+    )
+    assert p["income"]["other_income"] == 80.76
+    assert p["income"]["non_savings"] == pytest.approx(60080.76)
+    assert p["tax"]["other_income_tax"] == pytest.approx(80.76 * 0.40 - 16.13, abs=0.01)
+    assert p["tax"]["other_income_credit"] == 16.13
+
+
+def test_other_income_within_personal_allowance_yields_a_refund():
+    p = build_profile({}, Y, {"other_income": 100, "other_income_tax": 20})
+    assert p["tax"]["other_income_tax"] == pytest.approx(-20)

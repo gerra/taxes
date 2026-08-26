@@ -170,6 +170,24 @@ export interface DisposalEvent {
   entries: Entry[]
   amount: string | null
   gain: string | null
+  /** A gilt or UK T-bill: listed, but exempt from CGT (TCGA 1992 s115). */
+  exempt?: boolean
+}
+
+export interface OtherIncomeRow {
+  date: string
+  /** Ticker of the REIT, or the broker for a share-lending fee. */
+  source: string
+  amount_gbp: string
+  tax_gbp: string
+}
+
+export interface ExemptSecurity {
+  symbol: string
+  isin: string | null
+  kind: 'gilt' | 'tbill' | 'manual'
+  title: string | null
+  source: 'detected' | 'configured'
 }
 
 export interface Dividend {
@@ -198,6 +216,9 @@ export interface Bundle {
   dividends: Dividend[]
   interest: InterestRow[]
   interest_by_source: { broker: string; currency: string; amount_gbp: string }[]
+  interest_tax?: { date: string; broker: string; currency: string; amount_gbp: string }[]
+  other_income?: OtherIncomeRow[]
+  exempt?: { securities: ExemptSecurity[]; ais_applies: boolean; ais_nominal_peak: string }
   eri_distributions: { date: string; symbol: string; amount_gbp: string }[]
   portfolio_eoy: { symbol: string; quantity: string; pool_cost: string }[]
   warnings: string[]
@@ -273,9 +294,17 @@ export interface ReportView {
     uk_interest: { value: number }
     foreign_interest: { value: number }
     interest_estimated_tax: number | null
+    other_income: { value: number; tax_taken_off: number; estimated_tax: number | null }
   }
   sa_boxes: SABox[]
   rate_change_split: { before: number; after: number; date: string } | null
+  exempt_disposals: {
+    count: number
+    proceeds: number
+    gain: number
+    symbols: string[]
+    explain: string
+  } | null
   warnings: string[]
   has_estimates: boolean
   tax_due: TaxDue
@@ -287,6 +316,7 @@ export interface TaxDue {
   cgt?: number
   dividends?: number
   interest?: number
+  other_income?: number
   marginal_band?: string
   personal_allowance?: number
   psa?: number

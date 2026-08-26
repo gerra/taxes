@@ -121,3 +121,62 @@ def test_calculate_2023(raw_file, tmp_path):
     assert portfolio[0]["symbol"] == "TST"
     assert Decimal(portfolio[0]["quantity"]) == 50
     assert Decimal(portfolio[0]["pool_cost"]) == 500
+
+
+_RAW_INCOME = """date,action,symbol,quantity,price,fees,currency
+2023-04-10,TRANSFER,,1,2000,0,GBP
+2023-05-01,BUY,TST,100,10.00,0,GBP
+2023-05-01,BUY,GLT,100,0.94,0,GBP
+2023-06-01,SELL,TST,50,12.00,0,GBP
+2023-06-01,SELL,GLT,100,0.95,0,GBP
+2023-08-15,OTHER_INCOME,PHP,1,80.64,0,GBP
+2023-08-15,OTHER_INCOME_TAX,PHP,1,-16.13,0,GBP
+2023-08-17,OTHER_INCOME,,1,0.12,0,GBP
+"""
+
+
+def test_calculate_other_income_and_exempt_security(tmp_path):
+    """A gilt named in the job is listed but not charged; REIT income and its
+    withheld tax land in the other-income bucket, not interest."""
+    paths.ensure_dirs()
+    raw = tmp_path / "raw.csv"
+    raw.write_text(_RAW_INCOME)
+    work_dir = str(tmp_path / "work")
+    os.makedirs(work_dir)
+    job = {
+        "mode": "calculate",
+        "tax_year": 2023,
+        "files": {"raw": str(raw)},
+        "spin_offs": {},
+        "exempt_securities": ["glt"],
+        "exchange_rates_file": str(tmp_path / "rates.csv"),
+        "isin_translation_file": str(tmp_path / "isin.csv"),
+        "work_dir": work_dir,
+        "pdf_path": None,
+        "balance_check": True,
+    }
+    result = _run_worker(job, work_dir)
+    assert result["ok"], result
+    bundle = result["bundle"]
+    totals = bundle["totals"]
+    assert totals["disposal_count"] == 1
+    assert Decimal(totals["disposal_proceeds"]) == 600
+    assert Decimal(totals["total_gain"]) == 100
+    assert totals["exempt_disposal_count"] == 1
+    assert Decimal(totals["exempt_disposal_proceeds"]) == 95
+    assert Decimal(totals["other_income"]) == Decimal("80.76")
+    assert Decimal(totals["other_income_tax"]) == Decimal("16.13")
+    assert Decimal(totals["uk_interest"]) == 0
+
+    by_symbol = {d["symbol"]: d for d in bundle["disposals"]}
+    assert by_symbol["TST"]["exempt"] is False
+    assert by_symbol["GLT"]["exempt"] is True
+    assert Decimal(by_symbol["GLT"]["gain"]) == 1
+    assert bundle["other_income"] == [
+        {"date": "2023-08-15", "source": "PHP", "amount_gbp": "80.64", "tax_gbp": "16.13"},
+        {"date": "2023-08-17", "source": "Unknown", "amount_gbp": "0.12", "tax_gbp": "0"},
+    ]
+    assert bundle["exempt"]["securities"] == [
+        {"symbol": "GLT", "isin": None, "kind": "manual", "title": None, "source": "configured"}
+    ]
+    assert bundle["exempt"]["ais_applies"] is False

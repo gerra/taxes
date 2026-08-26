@@ -22,6 +22,9 @@ const RULE_EXPLAIN: Record<string, string> = {
   SPIN_OFF: 'Spin-off: cost apportioned from the parent holding.',
 }
 
+const EXEMPT_EXPLAIN =
+  'Exempt: gilts and UK Treasury bills are outside capital gains tax (TCGA 1992 s115). The matching above is shown for the record; the gain or loss is neither chargeable nor allowable and is left out of every SA108 figure.'
+
 export default function ReportView({ year }: { year: number }) {
   const [report, setReport] = useState<Report | null>(null)
   const [running, setRunning] = useState(false)
@@ -327,7 +330,27 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
           tax={view.cards.interest_estimated_tax}
         />
         <StatCard title="Foreign interest" value={gbp(view.cards.foreign_interest.value)} />
+        {view.cards.other_income.value > 0 && (
+          <StatCard
+            title="Other UK income"
+            value={gbp(view.cards.other_income.value)}
+            sub={`REIT PIDs and share lending — ${gbp(view.cards.other_income.tax_taken_off)} tax already taken off`}
+            tax={view.cards.other_income.estimated_tax}
+          />
+        )}
       </div>
+      {view.exempt_disposals && (
+        <div className="banner info">
+          <b>
+            {view.exempt_disposals.count} CGT-exempt disposal
+            {view.exempt_disposals.count === 1 ? '' : 's'} (
+            {view.exempt_disposals.symbols.join(', ')}
+            ): {gbp(view.exempt_disposals.proceeds)} proceeds, {gbp(view.exempt_disposals.gain)}{' '}
+            notional gain.
+          </b>{' '}
+          {view.exempt_disposals.explain}
+        </div>
+      )}
       {view.rate_change_split && (
         <div className="banner info">
           CGT rates changed on {shortDate(view.rate_change_split.date)}: gains before that date{' '}
@@ -355,7 +378,12 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
         </tbody>
       </table>
 
-      <h3>Disposals ({bundle.disposals.length})</h3>
+      <h3>
+        Disposals ({bundle.disposals.filter((d) => !d.exempt).length}
+        {bundle.disposals.some((d) => d.exempt) &&
+          ` chargeable + ${bundle.disposals.filter((d) => d.exempt).length} exempt`}
+        )
+      </h3>
       <DisposalsTable disposals={bundle.disposals} />
 
       {bundle.dividends.length > 0 && (
@@ -379,6 +407,37 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
                   <td className="num">{gbp(d.amount_gbp)}</td>
                   <td className="num">{gbp(d.tax_at_source_gbp)}</td>
                   <td className="num">{d.treaty ? gbp(d.treaty.relief_gbp) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {(bundle.other_income?.length ?? 0) > 0 && (
+        <>
+          <h3>Other UK income</h3>
+          <p className="muted small">
+            REIT property income distributions (under the REIT’s ticker, with the 20% tax it
+            withheld) and share-lending fees (under the broker). Goes in SA100 box 17, tax in box 19
+            — not dividends, not interest.
+          </p>
+          <table className="sa-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Source</th>
+                <th className="num">Gross (GBP)</th>
+                <th className="num">Tax taken off</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bundle.other_income!.map((r, i) => (
+                <tr key={i}>
+                  <td>{shortDate(r.date)}</td>
+                  <td>{r.source}</td>
+                  <td className="num">{gbp(r.amount_gbp)}</td>
+                  <td className="num">{parseFloat(r.tax_gbp) > 0 ? gbp(r.tax_gbp) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -476,6 +535,13 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           <b>{gbp(taxDue.interest)}</b>
           after {gbp(taxDue.psa, 0)} savings allowance
         </div>
+        {(taxDue.other_income ?? 0) !== 0 && (
+          <div>
+            Other UK income
+            <b>{gbp(taxDue.other_income)}</b>
+            at your marginal rate, less tax already withheld
+          </div>
+        )}
       </div>
       <div className="total-note">
         On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
@@ -575,16 +641,28 @@ function DisposalRow({ d, open, toggle }: { d: DisposalEvent; open: boolean; tog
   const gain = parseFloat(d.gain ?? '0')
   return (
     <>
-      <tr className="sa-row" onClick={toggle}>
+      <tr className={`sa-row${d.exempt ? ' muted' : ''}`} onClick={toggle}>
         <td>{shortDate(d.date)}</td>
-        <td>{d.symbol}</td>
+        <td>
+          {d.symbol}
+          {d.exempt && (
+            <span className="badge" title={EXEMPT_EXPLAIN}>
+              {' '}
+              CGT-exempt
+            </span>
+          )}
+        </td>
         <td className="num">{gbp(d.amount)}</td>
-        <td className={`num ${gain >= 0 ? 'gain' : 'loss'}`}>{gbp(d.gain)}</td>
+        <td className={`num ${d.exempt ? '' : gain >= 0 ? 'gain' : 'loss'}`}>
+          {gbp(d.gain)}
+          {d.exempt && ' (not chargeable)'}
+        </td>
         <td className="muted">{open ? '▾' : '▸'}</td>
       </tr>
       {open && (
         <tr className="explain-row">
           <td colSpan={5}>
+            {d.exempt && <div className="entry-line">{EXEMPT_EXPLAIN}</div>}
             {d.entries.map((e, i) => (
               <div key={i} className="entry-line">
                 <b>{e.rule.replace(/_/g, ' ')}</b>

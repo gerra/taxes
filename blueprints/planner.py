@@ -30,7 +30,15 @@ def _invest_for(user_id: int, tax_year: int, inputs: dict) -> tuple[dict, dict |
     run = repo.latest_ok_run(user_id, tax_year)
     bundle = json.loads(run["bundle"]) if run else None
     invest = report_view.summary_for_planner(bundle) if bundle else {}
-    for key in ("dividends_total", "uk_interest", "foreign_interest", "taxable_gain", "total_gain"):
+    for key in (
+        "dividends_total",
+        "uk_interest",
+        "foreign_interest",
+        "other_income",
+        "other_income_tax",
+        "taxable_gain",
+        "total_gain",
+    ):
         if inputs.get(f"override_{key}") not in (None, ""):
             invest[key] = float(inputs[f"override_{key}"])
     return invest, bundle

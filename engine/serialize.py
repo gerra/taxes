@@ -7,7 +7,7 @@ them. schema_version guards consumers against shape changes on fork upgrades.
 from collections import defaultdict
 from decimal import Decimal
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _d(value) -> str | None:
@@ -46,7 +46,10 @@ def serialize_report(report) -> dict:
                 "amount": _d(sum((e.amount for e in entries), Decimal(0))),
                 "gain": _d(sum((e.gain for e in entries), Decimal(0))),
             }
-            if kind == "sell":
+            if kind in ("sell", "exempt"):
+                # An exempt security (a gilt, a UK T-bill) is listed with its
+                # notional gain but counts for nothing: TCGA 1992 s115.
+                event["exempt"] = kind == "exempt"
                 disposals.append(event)
             elif kind == "buy":
                 acquisitions.append(event)
@@ -56,6 +59,8 @@ def serialize_report(report) -> dict:
 
     dividends = []
     interest = []
+    interest_tax = []
+    other_income: dict[tuple[str, str], dict] = {}
     eri_distributions = []
     for dt in sorted(report.calculation_log_yields):
         for key, entries in report.calculation_log_yields[dt].items():
@@ -80,6 +85,29 @@ def serialize_report(report) -> dict:
                                 if div.tax_treaty
                                 else None
                             ),
+                        }
+                    )
+                elif kind.startswith("otherIncome"):
+                    # Property income distributions, share-lending fees: one
+                    # row per payment, the tax withheld folded in by source.
+                    row = other_income.setdefault(
+                        (dt.isoformat(), label),
+                        {
+                            "date": dt.isoformat(),
+                            "source": label,
+                            "amount_gbp": "0",
+                            "tax_gbp": "0",
+                        },
+                    )
+                    field = "tax_gbp" if kind == "otherIncomeTax" else "amount_gbp"
+                    row[field] = _d(Decimal(row[field]) + e.amount)
+                elif kind.startswith("interestTax"):
+                    interest_tax.append(
+                        {
+                            "date": dt.isoformat(),
+                            "broker": label,
+                            "currency": kind[len("interestTax") :],
+                            "amount_gbp": _d(e.amount),
                         }
                     )
                 elif kind.startswith("interest"):
@@ -130,6 +158,11 @@ def serialize_report(report) -> dict:
             "dividends_taxable": _d(report.total_dividend_taxable_gain()),
             "uk_interest": _d(report.total_uk_interest),
             "foreign_interest": _d(report.total_foreign_interest),
+            "interest_tax": _d(report.total_interest_tax),
+            "other_income": _d(report.total_other_income),
+            "other_income_tax": _d(report.total_other_income_tax),
+            "exempt_disposal_count": report.exempt_disposal_count(),
+            "exempt_disposal_proceeds": _d(report.exempt_disposal_proceeds()),
             "eri_dividends": _d(report.total_eri_amount(is_interest=False)),
             "eri_interest": _d(report.total_eri_amount(is_interest=True)),
         },
@@ -142,6 +175,8 @@ def serialize_report(report) -> dict:
             {"broker": b, "currency": c, "amount_gbp": _d(v)}
             for (b, c), v in sorted(interest_totals.items())
         ],
+        "interest_tax": interest_tax,
+        "other_income": [other_income[k] for k in sorted(other_income)],
         "eri_distributions": eri_distributions,
         "portfolio_eoy": [
             {"symbol": p.symbol, "quantity": _d(p.quantity), "pool_cost": _d(p.amount)}

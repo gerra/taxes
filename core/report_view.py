@@ -20,6 +20,8 @@ def _gain_split(bundle: dict, change_date: str) -> dict:
     cut = date.fromisoformat(change_date)
     before = after = 0.0
     for event in bundle.get("disposals", []):
+        if event.get("exempt"):
+            continue
         gain = _f(event["gain"])
         if date.fromisoformat(event["date"]) < cut:
             before += gain
@@ -43,6 +45,17 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
     dividends_taxable = _f(t["dividends_taxable"])
     uk_interest = _f(t["uk_interest"])
     foreign_interest = _f(t["foreign_interest"])
+    other_income = _f(t.get("other_income"))
+    other_income_tax = _f(t.get("other_income_tax"))
+    other_rows = bundle.get("other_income", [])
+    # A REIT distribution is logged under its ticker with tax withheld; a
+    # share-lending fee under the broker's name with none.
+    brokers = {r["broker"] for r in bundle.get("interest", [])} | {"Freetrade", "Charles Schwab"}
+    pid_sources = sorted(
+        {r["source"] for r in other_rows if _f(r.get("tax_gbp")) > 0 or r["source"] not in brokers}
+    )
+    fee_total = sum(_f(r["amount_gbp"]) for r in other_rows if r["source"] not in pid_sources)
+    pid_total = other_income - fee_total
 
     sa_boxes = [
         {
@@ -125,6 +138,59 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "above 15% is not creditable.",
         },
     ]
+    if other_income > 0:
+        parts = []
+        if pid_total > 0:
+            parts.append(
+                f"£{pid_total:,.2f} of property income distributions from UK REITs "
+                f"({', '.join(pid_sources)}), gross"
+            )
+        if fee_total > 0:
+            parts.append(f"£{fee_total:,.2f} of share-lending fees")
+        sa_boxes.append(
+            {
+                "form": "SA100 TR3",
+                "box": "17",
+                "label": "Other taxable income (REIT PIDs, share lending)",
+                "value": round(other_income, 2),
+                "explain": " and ".join(parts) + ". PIDs are taxed as property income and "
+                "share-lending fees as miscellaneous income — neither is a dividend nor "
+                "interest, so both go in 'Other UK income' box 17, with what they are in "
+                "box 21. Share-lending fees under £1,000 are covered by the trading and "
+                "miscellaneous income allowance if you have no other such income; PIDs "
+                "are not covered by the £1,000 property allowance.",
+            }
+        )
+        sa_boxes.append(
+            {
+                "form": "SA100 TR3",
+                "box": "19",
+                "label": "Tax taken off other income",
+                "value": round(other_income_tax, 2),
+                "explain": "The 20% basic-rate tax the REITs withheld from the PIDs before "
+                "paying them. HMRC sets it against your bill, so enter it here rather "
+                "than netting it off box 17.",
+            }
+        )
+
+    exempt_events = [e for e in bundle.get("disposals", []) if e.get("exempt")]
+    exempt_disposals = None
+    if exempt_events:
+        exempt_gain = sum(_f(e["gain"]) for e in exempt_events)
+        exempt_disposals = {
+            "count": len(exempt_events),
+            "proceeds": round(sum(_f(e["amount"]) for e in exempt_events), 2),
+            "gain": round(exempt_gain, 2),
+            "symbols": sorted({e["symbol"] for e in exempt_events}),
+            "explain": (
+                f"{len(exempt_events)} disposal{'s' if len(exempt_events) != 1 else ''} of "
+                f"gilts or UK T-bills ({', '.join(sorted({e['symbol'] for e in exempt_events}))}) "
+                f"with a notional {'gain' if exempt_gain >= 0 else 'loss'} of "
+                f"£{abs(exempt_gain):,.2f} — exempt from capital gains tax under TCGA 1992 "
+                "s115, so not counted in the SA108 boxes above and not a disposal to declare. "
+                "Interest on them is still taxable."
+            ),
+        }
 
     warnings = list(bundle.get("warnings", []))
     if not y:
@@ -150,6 +216,11 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "uk_interest": {"value": round(uk_interest, 2)},
         "foreign_interest": {"value": round(foreign_interest, 2)},
         "interest_estimated_tax": profile["tax"]["savings_tax"] if profile else None,
+        "other_income": {
+            "value": round(other_income, 2),
+            "tax_taken_off": round(other_income_tax, 2),
+            "estimated_tax": profile["tax"].get("other_income_tax") if profile else None,
+        },
     }
 
     if profile:
@@ -159,7 +230,14 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "cgt": tx["cgt_estimate"],
             "dividends": tx["dividend_tax"],
             "interest": tx["savings_tax"],
-            "total": round(tx["cgt_estimate"] + tx["dividend_tax"] + tx["savings_tax"], 2),
+            "other_income": tx.get("other_income_tax", 0.0),
+            "total": round(
+                tx["cgt_estimate"]
+                + tx["dividend_tax"]
+                + tx["savings_tax"]
+                + tx.get("other_income_tax", 0.0),
+                2,
+            ),
             "marginal_band": profile["bands"]["marginal_band"],
             "personal_allowance": profile["allowances"]["personal_allowance"],
             "psa": profile["allowances"]["psa"],
@@ -179,8 +257,11 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "cards": cards,
         "sa_boxes": sa_boxes,
         "rate_change_split": rate_change,
+        "exempt_disposals": exempt_disposals,
         "warnings": warnings,
-        "notices": notices.build_notices(warnings, bundle.get("refunds")),
+        "notices": notices.build_notices(
+            warnings, bundle.get("refunds"), bundle.get("exempt"), tax_year
+        ),
         "has_estimates": profile is not None,
         "tax_due": tax_due,
     }
@@ -193,6 +274,8 @@ def summary_for_planner(bundle: dict) -> dict:
         "dividends_taxable": _f(t["dividends_taxable"]),
         "uk_interest": _f(t["uk_interest"]),
         "foreign_interest": _f(t["foreign_interest"]),
+        "other_income": _f(t.get("other_income")),
+        "other_income_tax": _f(t.get("other_income_tax")),
         "total_gain": _f(t["total_gain"]),
         "taxable_gain": _f(t["taxable_gain"]) if t["taxable_gain"] is not None else 0.0,
     }

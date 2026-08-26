@@ -83,6 +83,15 @@ CREATE TABLE IF NOT EXISTS spin_offs (
     UNIQUE (user_id, dst)
 );
 
+CREATE TABLE IF NOT EXISTS exempt_securities (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    name        TEXT NOT NULL,   -- ticker or ISIN, upper-case; CGT-exempt (TCGA 1992 s115)
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS column_mappings (
     account_id  INTEGER PRIMARY KEY REFERENCES accounts(id),
     mapping     TEXT NOT NULL  -- JSON: {date, description, amount, currency, interest_match}

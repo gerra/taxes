@@ -399,7 +399,8 @@ def allowance_overflow(ctx):
 
 def payments_on_account(ctx):
     profile, ty = ctx["profile"], ctx["tax_year"]
-    untaxed = profile["tax"]["dividend_tax"] + profile["tax"]["savings_tax"]
+    tx = profile["tax"]
+    untaxed = tx["dividend_tax"] + tx["savings_tax"] + max(0.0, tx.get("other_income_tax", 0.0))
     if untaxed <= 1000:
         return None
     deadline = tax_years.filing_deadline(ty)

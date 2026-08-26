@@ -11,7 +11,8 @@ Job JSON:
   {"mode": "calculate", "tax_year": int, "files": {schwab|schwab_award|
    schwab_equity_award_json|freetrade|raw: path}, "spin_offs": {dst: src},
    "exchange_rates_file": path, "isin_translation_file": path,
-   "work_dir": path, "pdf_path": path|null, "balance_check": bool}
+   "work_dir": path, "pdf_path": path|null, "balance_check": bool,
+   "exempt_securities": [ticker|ISIN, ...]}
 
 Result JSON: {"ok": true, ...} or {"ok": false, "error": {"type", "message", ...}}.
 Written to the result file, never stdout (the library prints to stdout).
@@ -184,6 +185,114 @@ def detect_withholding_refunds(transactions) -> list[dict]:
     return refunds
 
 
+# ── CGT-exempt securities (TCGA 1992 s115) ─────────────────────────────────────
+
+# A gilt's name is its coupon and redemption year ("1/8% Gilt 2028",
+# "4¼% Treasury Gilt 2032", "0⅛% Treasury Stock 2028"); a fund never looks like
+# that. Together with a GB ISIN this is specific enough to act on.
+_GILT_TITLE = re.compile(
+    r"^\s*\d+(?:[/.]\d+|[¼½¾⅛⅜⅝⅞])?\s*%\s*(?:treasury\s+)?(?:gilt|stock)\b.*\b(?:19|20)\d{2}\b",
+    re.IGNORECASE,
+)
+_TBILL_TITLE = re.compile(r"\b(?:uk\s+)?t-?bills?\b|\btreasury\s+bills?\b", re.IGNORECASE)
+_ACCRUED = re.compile(
+    r"Accrued interest of ([\d.]+) (\w+) in the (purchase|sale) of exempt security "
+    r"(\S+) on (\d{4}-\d{2}-\d{2})"
+)
+AIS_NOMINAL_LIMIT = Decimal(5000)
+
+
+def detect_exempt_securities(transactions) -> list[dict]:
+    """Gilts and UK Treasury bills among the traded securities, recognised by
+    their name and a GB ISIN. Returns [{symbol, isin, kind: gilt|tbill, title}]."""
+    from cgt_calc.model import ActionType
+
+    found: dict[str, dict] = {}
+    for t in transactions:
+        if t.action not in (ActionType.BUY, ActionType.SELL) or not t.symbol:
+            continue
+        if not (t.isin or "").upper().startswith("GB"):
+            continue
+        title = (t.description or "").split(" ActionType.")[0].strip()
+        if _GILT_TITLE.search(title):
+            kind = "gilt"
+        elif _TBILL_TITLE.search(title):
+            kind = "tbill"
+        else:
+            continue
+        found.setdefault(
+            t.symbol, {"symbol": t.symbol, "isin": t.isin, "kind": kind, "title": title}
+        )
+    return [found[k] for k in sorted(found)]
+
+
+def peak_nominal_held(transactions, symbols: set[str], tax_year: int) -> Decimal:
+    """Largest total nominal of the given securities held at any point in the
+    tax year (the Accrued Income Scheme's £5,000 test looks at the total held,
+    including positions carried in from before 6 April)."""
+    from cgt_calc.model import ActionType
+
+    start, end = date(tax_year, 4, 6), date(tax_year + 1, 4, 5)
+    signed = [
+        (t.date, (t.quantity or Decimal(0)) * (1 if t.action == ActionType.BUY else -1))
+        for t in transactions
+        if t.symbol in symbols and t.action in (ActionType.BUY, ActionType.SELL)
+    ]
+    running = sum((q for d, q in signed if d < start), Decimal(0))
+    peak = running
+    for _, q in sorted((d, q) for d, q in signed if start <= d <= end):
+        running += q
+        peak = max(peak, running)
+    return peak
+
+
+def exempt_summary(job: dict, transactions, warnings: list[str]) -> tuple[list[str], dict]:
+    """Decide which securities the calculator must treat as CGT-exempt and
+    gather what the report says about them: the configured list from the job,
+    the detected gilts/T-bills, and the accrued-interest lines the engine logs
+    for dirty-price gilt trades (Accrued Income Scheme)."""
+    detected = detect_exempt_securities(transactions)
+    configured = [
+        str(s).strip().upper() for s in job.get("exempt_securities", []) if str(s).strip()
+    ]
+    securities = []
+    for d in detected:
+        securities.append({**d, "source": "detected"})
+    known = {s["symbol"].upper() for s in securities} | {
+        (s["isin"] or "").upper() for s in securities
+    }
+    for name in configured:
+        if name not in known:
+            securities.append(
+                {
+                    "symbol": name,
+                    "isin": None,
+                    "kind": "manual",
+                    "title": None,
+                    "source": "configured",
+                }
+            )
+    names = sorted({s["symbol"] for s in securities} | set(configured))
+
+    gilts = {s["symbol"] for s in securities if s["kind"] == "gilt"}
+    peak = peak_nominal_held(transactions, gilts, job["tax_year"]) if gilts else Decimal(0)
+    accrued = []
+    for w in warnings:
+        m = _ACCRUED.search(w)
+        if m:
+            amount, ccy, side, symbol, day = m.groups()
+            accrued.append(
+                {"symbol": symbol, "date": day, "side": side, "amount": amount, "currency": ccy}
+            )
+    return names, {
+        "securities": securities,
+        "ais_nominal_peak": str(peak),
+        "ais_limit": str(AIS_NOMINAL_LIMIT),
+        "ais_applies": bool(gilts) and peak > AIS_NOMINAL_LIMIT,
+        "accrued_interest": accrued,
+    }
+
+
 def run_calculate(job: dict) -> dict:
     from cgt_calc import render_latex
     from cgt_calc.args_parser import create_parser
@@ -226,6 +335,7 @@ def run_calculate(job: dict) -> dict:
     isin_converter = IsinConverter(args.isin_translation_file)
     broker_transactions = BrokerRegistry.load_all_transactions(args, isin_converter)
     refunds = detect_withholding_refunds(broker_transactions)
+    exempt_names, _ = exempt_summary(job, broker_transactions, [])
     currency_converter = CurrencyConverter(args.exchange_rates_file)
     price_fetcher = CurrentPriceFetcher(currency_converter)
     initial_prices = InitialPrices(args.initial_prices_file)
@@ -242,6 +352,7 @@ def run_calculate(job: dict) -> dict:
         args.interest_fund_tickers,
         balance_check=args.balance_check,
         calc_unrealized_gains=False,
+        exempt_securities=exempt_names,
     )
     calculator.convert_to_hmrc_transactions(broker_transactions)
     report = calculator.calculate_capital_gain()
@@ -256,6 +367,9 @@ def run_calculate(job: dict) -> dict:
 
     bundle = serialize_report(report)
     bundle["refunds"] = refunds
+    _, bundle["exempt"] = exempt_summary(job, broker_transactions, handler.messages)
+    # The accrued-interest lines are carried structured in bundle["exempt"].
+    handler.messages = [m for m in handler.messages if not _ACCRUED.search(m)]
     bundle["warnings"] = handler.messages + bundle.get("warnings", [])
     bundle["meta"] = {
         "files": {k: os.path.basename(v) for k, v in job["files"].items() if v},

@@ -22,7 +22,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER_TIMEOUT = 240  # seconds; below gunicorn's 300s
 
 # Bump when the worker/bundle shape changes so cached runs are recomputed.
-ENGINE_VERSION = 2
+ENGINE_VERSION = 3
 
 RAW_HEADER = ["date", "action", "symbol", "quantity", "price", "fees", "currency"]
 
@@ -316,6 +316,7 @@ def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) 
         "balance_check": balance_check,
         "docs": sorted((d["account_id"], d["sha256"]) for d in repo.list_documents(user_id)),
         "spin_offs": sorted((r["dst"], r["src"]) for r in repo.list_spin_offs(user_id)),
+        "exempt": sorted(r["name"] for r in repo.list_exempt_securities(user_id)),
         "mappings": sorted(
             (a["id"], json.dumps(repo.get_column_mapping(a["id"]), sort_keys=True))
             for a in repo.list_accounts(user_id)
@@ -393,6 +394,9 @@ def run_calculation(
             "tax_year": tax_year,
             "files": files,
             "spin_offs": {r["dst"]: r["src"] for r in repo.list_spin_offs(user_id)},
+            # Gilts/T-bills the worker also detects by name; this list is the
+            # user's additions (ticker or ISIN) for anything it cannot see.
+            "exempt_securities": [r["name"] for r in repo.list_exempt_securities(user_id)],
             "exchange_rates_file": paths.EXCHANGE_RATES_FILE,
             "isin_translation_file": os.path.join(paths.CACHE_DIR, "isin_translation.csv"),
             "work_dir": work_dir,

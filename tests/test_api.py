@@ -281,3 +281,17 @@ def test_balance_check_waiver_is_explicit_and_per_run(auth_client, monkeypatch):
     auth_client.post("/api/calc/run", json={"year": 2024, "force": True})
     auth_client.post("/api/calc/run", json={"year": 2024, "balance_check": False})
     assert seen == [True, True, False]
+
+
+def test_exempt_securities_roundtrip(auth_client):
+    resp = auth_client.post("/api/exempt-securities", json={"name": " tn28 ", "note": "gilt"})
+    assert resp.status_code == 201
+    assert resp.get_json()["name"] == "TN28"
+    assert (
+        auth_client.post("/api/exempt-securities", json={"name": "not a ticker"}).status_code == 400
+    )
+    names = [r["name"] for r in auth_client.get("/api/exempt-securities").get_json()]
+    assert "TN28" in names
+    assert auth_client.delete("/api/exempt-securities/tn28").status_code == 200
+    names = [r["name"] for r in auth_client.get("/api/exempt-securities").get_json()]
+    assert "TN28" not in names

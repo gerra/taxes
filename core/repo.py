@@ -480,6 +480,45 @@ def upsert_spin_off(user_id: int, dst: str, src: str) -> None:
         conn.close()
 
 
+def list_exempt_securities(user_id: int) -> list[dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM exempt_securities WHERE user_id = ? ORDER BY name", (user_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_exempt_security(user_id: int, name: str, note: str = "") -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO exempt_securities (user_id, name, note) VALUES (?, ?, ?)
+               ON CONFLICT (user_id, name) DO UPDATE SET note = excluded.note""",
+            (user_id, name, note),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM exempt_securities WHERE user_id = ? AND name = ?", (user_id, name)
+        ).fetchone()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def delete_exempt_security(user_id: int, name: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "DELETE FROM exempt_securities WHERE user_id = ? AND name = ?", (user_id, name)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def get_column_mapping(account_id: int) -> dict | None:
     conn = get_conn()
     try:

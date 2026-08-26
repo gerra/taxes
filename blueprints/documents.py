@@ -133,6 +133,30 @@ def add_spin_off():
     return jsonify({"ok": True}), 201
 
 
+@bp.get("/api/exempt-securities")
+def list_exempt_securities():
+    """Securities the user has marked CGT-exempt (gilts, T-bills), by ticker or ISIN.
+    Gilts and T-bills in Freetrade exports are recognised automatically; this
+    list is for anything the detection cannot see."""
+    return jsonify(repo.list_exempt_securities(g.user_id))
+
+
+@bp.post("/api/exempt-securities")
+def add_exempt_security():
+    body = request.get_json(force=True)
+    name = (body.get("name") or "").strip().upper()
+    if not name or len(name) > 20 or not name.replace(".", "").replace("-", "").isalnum():
+        return jsonify({"error": "name must be a ticker or ISIN"}), 400
+    row = repo.add_exempt_security(g.user_id, name, (body.get("note") or "").strip())
+    return jsonify(row), 201
+
+
+@bp.delete("/api/exempt-securities/<name>")
+def delete_exempt_security(name: str):
+    repo.delete_exempt_security(g.user_id, name.strip().upper())
+    return jsonify({"ok": True})
+
+
 @bp.post("/api/accounts/<int:account_id>/no-activity")
 def add_no_activity(account_id: int):
     """User confirms an account had no transactions in [start, end] — counts as covered."""

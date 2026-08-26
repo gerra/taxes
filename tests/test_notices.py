@@ -201,3 +201,77 @@ def test_bnb_grouped_per_tax_year():
     assert set(by_key) == {"bed_and_breakfast__META__2023", "bed_and_breakfast__META__2024"}
     assert by_key["bed_and_breakfast__META__2023"]["count"] == 2
     assert by_key["bed_and_breakfast__META__2024"]["tax_year"] == 2024
+
+
+EXEMPT = {
+    "securities": [
+        {
+            "symbol": "TN28",
+            "isin": "GB00BMBL1G81",
+            "kind": "gilt",
+            "title": "1/8% Gilt 2028",
+            "source": "detected",
+        },
+        {
+            "symbol": "GB00BP243M73",
+            "isin": "GB00BP243M73",
+            "kind": "tbill",
+            "title": "UK T-Bill 15/07/24",
+            "source": "detected",
+        },
+    ],
+    "ais_nominal_peak": "17005.77",
+    "ais_limit": "5000",
+    "ais_applies": True,
+    "accrued_interest": [
+        {
+            "symbol": "TN28",
+            "date": "2026-06-15",
+            "side": "purchase",
+            "amount": "8.04",
+            "currency": "GBP",
+        },
+        {
+            "symbol": "TN28",
+            "date": "2026-08-25",
+            "side": "sale",
+            "amount": "1.53",
+            "currency": "GBP",
+        },
+        {
+            "symbol": "TN28",
+            "date": "2025-08-25",
+            "side": "sale",
+            "amount": "0.40",
+            "currency": "GBP",
+        },
+    ],
+}
+
+
+def test_exempt_and_accrued_income_notices():
+    notices = build_notices([], None, EXEMPT, 2026)
+    by_key = {n["key"]: n for n in notices}
+    exempt = by_key["exempt_securities"]
+    assert exempt["kind"] == "info"
+    assert exempt["tax_year"] is None
+    assert "[[TN28]] — 1/8% Gilt 2028 (GB00BMBL1G81) — recognised by name" in exempt["occurrences"]
+    assert "T-bill" in exempt["action"]
+    ais = by_key["accrued_income_scheme"]
+    assert ais["kind"] == "warning"
+    assert ais["tax_year"] == 2026
+    assert "[[£17,005.77]]" in ais["summary"]
+    # Only this year's trades are listed; the 2025 sale belongs to 2025/26.
+    assert ais["occurrences"] == [
+        "[[£8.04]] accrued interest paid on the purchase of [[TN28]] on [[15 Jun 2026]]",
+        "[[£1.53]] accrued interest received on the sale of [[TN28]] on [[25 Aug 2026]]",
+    ]
+
+
+def test_no_ais_notice_below_the_limit():
+    notices = build_notices([], None, {**EXEMPT, "ais_applies": False}, 2026)
+    assert [n["key"] for n in notices] == ["exempt_securities"]
+
+
+def test_no_exempt_notices_without_securities():
+    assert build_notices([], None, {"securities": [], "ais_applies": False}, 2026) == []

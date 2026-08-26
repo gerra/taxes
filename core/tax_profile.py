@@ -53,7 +53,9 @@ def _income_parts(inputs: dict, invest: dict) -> tuple[float, float, float]:
     savings = float(invest.get("uk_interest") or 0) + float(invest.get("foreign_interest") or 0)
     savings += val("other_interest")
     dividends = float(invest.get("dividends_total") or 0)
-    return employment + val("other_income"), savings, dividends
+    # The report's REIT PIDs and share-lending fees are non-savings income too.
+    other = val("other_income") + float(invest.get("other_income") or 0)
+    return employment + other, savings, dividends
 
 
 def total_income(inputs: dict, invest: dict) -> float:
@@ -74,6 +76,10 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     gift_aid_gross = val("gift_aid_paid") / 0.8
 
     non_savings, savings, dividends = _income_parts(inputs, invest)
+    # REIT PIDs and share-lending fees from the report: taxed at the marginal
+    # income-tax rates, with the 20% the REIT withheld credited against the bill.
+    report_other = float(invest.get("other_income") or 0)
+    report_other_credit = float(invest.get("other_income_tax") or 0)
     total_income = non_savings + savings + dividends
     adjusted_net_income = max(0.0, total_income - sipp_gross - gift_aid_gross)
 
@@ -93,6 +99,17 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     floor = 0.0
     ns_slices, floor = _band_slices(
         taxable_non_savings, floor, basic_top, additional_top, year["income_rates"]
+    )
+    # Tax on the report's other income = what non-savings tax would drop by without it.
+    ns_without_other, _ = _band_slices(
+        max(0.0, taxable_non_savings - report_other),
+        0.0,
+        basic_top,
+        additional_top,
+        year["income_rates"],
+    )
+    other_income_tax = (
+        sum(s.tax for s in ns_slices) - sum(s.tax for s in ns_without_other) - report_other_credit
     )
 
     # Savings: starting rate band (0%) shrinks £-for-£ with taxable non-savings income,
@@ -152,6 +169,7 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     return {
         "income": {
             "non_savings": non_savings,
+            "other_income": report_other,
             "savings": savings,
             "dividends": dividends,
             "total": total_income,
@@ -176,6 +194,9 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
             "income_tax_total": round(income_tax_total, 2),
             "savings_tax": round(savings_tax, 2),
             "dividend_tax": round(dividend_tax, 2),
+            # Net of the tax already withheld; negative means a refund is due.
+            "other_income_tax": round(other_income_tax, 2),
+            "other_income_credit": round(report_other_credit, 2),
             "cgt_estimate": round(cgt_estimate, 2),
             "cgt_at_basic": round(cgt_at_basic, 2),
             "cgt_at_higher": round(cgt_at_higher, 2),
