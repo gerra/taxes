@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
 import Notices from '../components/Notices'
-import type { CalcRun, DisposalEvent, Report, TaxDue } from '../types'
+import type { CalcRun, DisposalEvent, ErrorTransaction, Report, TaxDue } from '../types'
 import { gbp, num, pct, shortDate } from '../utils/format'
 
 const RULE_EXPLAIN: Record<string, string> = {
@@ -117,8 +117,38 @@ function CalcErrorCard({
   return (
     <section className="card error-card">
       <b>Calculation failed ({error.type})</b>
-      <p>{error.message}</p>
+      <p className="error-message">{error.message}</p>
+      {error.transaction && <ErrorTransactionTable tx={error.transaction} />}
     </section>
+  )
+}
+
+function ErrorTransactionTable({ tx }: { tx: ErrorTransaction }) {
+  const money = (v: string | null, decimals = 2) =>
+    v === null ? '—' : `${num(v, decimals)} ${tx.currency}`
+  const rows: [string, string][] = [
+    ['Date', shortDate(tx.date)],
+    ['Action', tx.action],
+    ['Symbol', tx.symbol ?? '—'],
+    ['ISIN', tx.isin ?? '—'],
+    ['Description', tx.description],
+    ['Quantity', num(tx.quantity, 8)],
+    ['Price', money(tx.price, 6)],
+    ['Fees', money(tx.fees)],
+    ['Amount', money(tx.amount)],
+    ['Broker', tx.broker],
+  ]
+  return (
+    <table className="error-transaction">
+      <tbody>
+        {rows.map(([k, v]) => (
+          <tr key={k}>
+            <th>{k}</th>
+            <td>{v}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 

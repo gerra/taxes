@@ -66,10 +66,26 @@ export interface Checklist {
   overall: 'ok' | 'gaps' | 'missing' | 'no_accounts'
 }
 
+export interface ErrorTransaction {
+  date: string
+  action: string
+  symbol: string | null
+  isin: string | null
+  description: string
+  quantity: string | null
+  price: string | null
+  fees: string | null
+  amount: string | null
+  currency: string
+  broker: string
+}
+
 export interface CalcError {
   type: string
   message: string
   symbol?: string
+  // The offending row, for InvalidTransactionError and its subclasses.
+  transaction?: ErrorTransaction
 }
 
 export interface CalcRun {

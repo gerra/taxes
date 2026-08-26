@@ -26,7 +26,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from cgt_calc.exceptions import CgtError
+from cgt_calc.exceptions import CgtError, InvalidTransactionError
 
 from engine.serialize import serialize_report
 
@@ -264,9 +264,42 @@ def run_calculate(job: dict) -> dict:
     return {"ok": True, "bundle": bundle, "pdf_rendered": pdf_rendered}
 
 
+# InvalidTransactionError appends the offending transaction's Python repr to
+# its message; the UI gets it as structured fields instead.
+_TRANSACTION_MARKER = " for the following transaction:\n"
+
+
+def describe_transaction(t) -> dict:
+    """Flatten a BrokerTransaction for the API (money as strings)."""
+
+    def money(v):
+        return None if v is None else str(v)
+
+    return {
+        "date": t.date.isoformat(),
+        "action": t.action.name,
+        "symbol": t.symbol,
+        "isin": t.isin,
+        "description": t.description,
+        "quantity": money(t.quantity),
+        "price": money(t.price),
+        "fees": money(t.fees),
+        "amount": money(t.amount),
+        "currency": t.currency,
+        "broker": t.broker,
+    }
+
+
 def describe_error(e: Exception) -> dict:
     if isinstance(e, UnknownSpinOffError):
         return {"type": "unknown_spin_off", "symbol": e.symbol, "message": str(e)}
+    if isinstance(e, InvalidTransactionError):
+        message = str(e).split(_TRANSACTION_MARKER, 1)[0]
+        return {
+            "type": type(e).__name__,
+            "message": message,
+            "transaction": describe_transaction(e.transaction),
+        }
     if isinstance(e, CgtError):
         return {"type": type(e).__name__, "message": str(e)}
     return {"type": "unexpected", "message": f"{type(e).__name__}: {e}"}

@@ -515,6 +515,30 @@ select:focus {
   background: #fffafa;
 }
 
+.error-card .error-message {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-transaction {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.error-transaction th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 3px 16px 3px 0;
+  white-space: nowrap;
+}
+
+.error-transaction td {
+  padding: 3px 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .tip-card {
   cursor: pointer;
   transition: transform 0.12s ease;

@@ -76,11 +76,12 @@ def _run_worker(job: dict, work_dir: str) -> dict:
     else:
         err = result.get("error") or {}
         _log.warning(
-            "worker (%s, %s) failed: %s: %s",
+            "worker (%s, %s) failed: %s: %s%s",
             job.get("mode"),
             job.get("account_type") or job.get("tax_year"),
             err.get("type"),
             err.get("message"),
+            f" — transaction {json.dumps(err['transaction'])}" if err.get("transaction") else "",
         )
         if proc.stderr:
             _log.warning("worker stderr tail: %s", proc.stderr[-2000:])
