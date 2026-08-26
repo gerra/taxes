@@ -61,3 +61,62 @@ def test_subclasses_keep_their_own_type_name():
 def test_plain_cgt_error_keeps_full_message():
     out = describe_error(CgtError("Something\nmulti-line"))
     assert out == {"type": "CgtError", "message": "Something\nmulti-line"}
+
+
+BALANCE_MESSAGE = (
+    "Reached a negative balance(-2532.71) for broker Freetrade (GBP) after processing "
+    "the following transactions:\n"
+    "... 1 earlier transaction(s) omitted ...\n"
+    "FreetradeTransaction(date=datetime.date(2023, 9, 14), action=<ActionType.TRANSFER: 3>, "
+    "symbol=None, description='Top up ActionType.TRANSFER', quantity=None, price=None, "
+    "fees=Decimal('0'), amount=Decimal('1000.00'), currency='GBP', broker='Freetrade', "
+    "isin=None, foreign_fees={}, ambiguous_quantity=None)\n"
+    "Balance after transaction=1000.00\n"
+    "FreetradeTransaction(date=datetime.date(2024, 6, 14), action=<ActionType.BUY: 1>, "
+    "symbol='GB00BP243M73', description='UK T-Bill 15/07/24 ActionType.BUY', "
+    "quantity=Decimal('3047.95000000'), price=Decimal('0.99602511'), fees=Decimal('0.00'), "
+    "amount=Decimal('-3035.83'), currency='GBP', broker='Freetrade', isin='GB00BP243M73', "
+    "foreign_fees={}, ambiguous_quantity=None)\n"
+    "Balance after transaction=-2532.71\n"
+    "Tip: If your input file is missing deposits/withdrawals use --no-balance-check."
+)
+
+
+def test_negative_balance_becomes_a_headline_plus_ledger_rows():
+    from cgt_calc.exceptions import CalculationError
+
+    out = describe_error(CalculationError(BALANCE_MESSAGE))
+    assert out["type"] == "negative_balance"
+    assert out["broker"] == "Freetrade"
+    assert out["currency"] == "GBP"
+    assert out["balance"] == "-2532.71"
+    # The headline is one readable sentence, not the ledger or the CLI tip.
+    assert "FreetradeTransaction(" not in out["message"]
+    assert "--no-balance-check" not in out["message"]
+    assert len(out["message"]) < 200
+    assert out["ledger"] == [
+        {"note": "1 earlier transaction(s) omitted"},
+        {
+            "date": "2023-09-14",
+            "action": "TRANSFER",
+            "symbol": None,
+            "description": "Top up",
+            "amount": "1000.00",
+            "balance": "1000.00",
+        },
+        {
+            "date": "2024-06-14",
+            "action": "BUY",
+            "symbol": "GB00BP243M73",
+            "description": "UK T-Bill 15/07/24",
+            "amount": "-3035.83",
+            "balance": "-2532.71",
+        },
+    ]
+
+
+def test_other_calculation_errors_are_untouched():
+    from cgt_calc.exceptions import CalculationError
+
+    out = describe_error(CalculationError("Ambiguous quantity"))
+    assert out == {"type": "CalculationError", "message": "Ambiguous quantity"}

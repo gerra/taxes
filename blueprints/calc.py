@@ -29,7 +29,9 @@ def run():
     body = request.get_json(force=True)
     tax_year = int(body["year"])
     force = bool(body.get("force"))
-    run_row = runner.run_calculation(g.user_id, tax_year, force=force)
+    # Waiving the cash-balance check is deliberate and per-run; it never sticks.
+    balance_check = body.get("balance_check", True) is not False
+    run_row = runner.run_calculation(g.user_id, tax_year, force=force, balance_check=balance_check)
     return jsonify(_run_json(run_row))
 
 

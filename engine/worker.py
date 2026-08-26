@@ -21,6 +21,7 @@ import decimal
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date
 from decimal import Decimal
@@ -268,6 +269,56 @@ def run_calculate(job: dict) -> dict:
 # its message; the UI gets it as structured fields instead.
 _TRANSACTION_MARKER = " for the following transaction:\n"
 
+# The balance check fails with one enormous string: a headline, then a ledger of
+# transaction reprs each followed by its running balance, then a CLI tip. The UI
+# gets the headline as fields and the ledger as rows.
+_BALANCE_HEADER = re.compile(
+    r"Reached a negative balance\((?P<balance>-?[\d.]+)\) for broker (?P<broker>.+?) "
+    r"\((?P<currency>[A-Z]{3})\) after processing the following transactions:\n"
+)
+_BALANCE_ROW = "Balance after transaction="
+
+
+def _parse_transaction_repr(line: str) -> dict:
+    """Pull the fields the UI shows out of a BrokerTransaction repr. Anything
+    unparseable is kept verbatim as a note rather than dropped."""
+
+    def grab(pattern: str) -> str | None:
+        m = re.search(pattern, line)
+        return m.group(1) if m else None
+
+    day = re.search(r"date=datetime\.date\((\d+), (\d+), (\d+)\)", line)
+    action = grab(r"action=<ActionType\.(\w+)")
+    description = grab(r"description='([^']*)'") or ""
+    if action and description.endswith(f" ActionType.{action}"):
+        description = description[: -len(f" ActionType.{action}")]
+    row = {
+        "date": date(*(int(g) for g in day.groups())).isoformat() if day else None,
+        "action": action,
+        "symbol": grab(r"symbol='([^']*)'"),
+        "description": description or None,
+        "amount": grab(r"amount=Decimal\('([^']*)'\)"),
+        "balance": None,
+    }
+    return row if any(v for v in row.values()) else {"note": line}
+
+
+def parse_balance_ledger(body: str) -> list[dict]:
+    rows: list[dict] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(_BALANCE_ROW):
+            if rows:
+                rows[-1]["balance"] = line[len(_BALANCE_ROW) :]
+            continue
+        if line.startswith("..."):  # "... N earlier transaction(s) omitted ..."
+            rows.append({"note": line.strip(". ")})
+            continue
+        rows.append(_parse_transaction_repr(line))
+    return rows
+
 
 def describe_transaction(t) -> dict:
     """Flatten a BrokerTransaction for the API (money as strings)."""
@@ -301,7 +352,23 @@ def describe_error(e: Exception) -> dict:
             "transaction": describe_transaction(e.transaction),
         }
     if isinstance(e, CgtError):
-        return {"type": type(e).__name__, "message": str(e)}
+        text = str(e)
+        m = _BALANCE_HEADER.match(text)
+        if m:
+            body = text[m.end() :].split("\nTip:")[0]
+            return {
+                "type": "negative_balance",
+                "message": (
+                    f"{m['broker']}'s running {m['currency']} cash balance goes negative "
+                    f"({m['balance']}), so money left the account that your documents never "
+                    "show arriving."
+                ),
+                "broker": m["broker"],
+                "currency": m["currency"],
+                "balance": m["balance"],
+                "ledger": parse_balance_ledger(body),
+            }
+        return {"type": type(e).__name__, "message": text}
     return {"type": "unexpected", "message": f"{type(e).__name__}: {e}"}
 
 

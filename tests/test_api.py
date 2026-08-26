@@ -255,3 +255,29 @@ def test_unauthenticated_api_error_logged_at_info(client, caplog):
     assert len(api) == 1
     assert api[0].levelno == logging.INFO
     assert "GET /api/accounts -> 401" in api[0].getMessage()
+
+
+def test_balance_check_waiver_is_explicit_and_per_run(auth_client, monkeypatch):
+    """The cash-balance check is only ever waived when the request says so."""
+    from blueprints import calc
+
+    seen = []
+
+    def fake_run(user_id, tax_year, force=False, balance_check=True):
+        seen.append(balance_check)
+        return {
+            "id": 1,
+            "tax_year": tax_year,
+            "status": "ok",
+            "created_at": None,
+            "finished_at": None,
+            "pdf_path": None,
+            "error": None,
+        }
+
+    monkeypatch.setattr(calc.runner, "run_calculation", fake_run)
+
+    auth_client.post("/api/calc/run", json={"year": 2024})
+    auth_client.post("/api/calc/run", json={"year": 2024, "force": True})
+    auth_client.post("/api/calc/run", json={"year": 2024, "balance_check": False})
+    assert seen == [True, True, False]

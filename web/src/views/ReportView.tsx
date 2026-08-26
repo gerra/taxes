@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
+import { useConfirm } from '../components/ConfirmDialog'
 import Notices from '../components/Notices'
-import type { CalcRun, DisposalEvent, ErrorTransaction, Report, TaxDue } from '../types'
+import type {
+  BalanceLedgerRow,
+  CalcRun,
+  DisposalEvent,
+  ErrorTransaction,
+  Report,
+  TaxDue,
+} from '../types'
 import { gbp, num, pct, shortDate } from '../utils/format'
 
 const RULE_EXPLAIN: Record<string, string> = {
@@ -33,11 +41,15 @@ export default function ReportView({ year }: { year: number }) {
 
   useEffect(load, [load])
 
-  const run = async (force = false) => {
+  const run = async (force = false, balanceCheck = true) => {
     setRunning(true)
     setCalcError(null)
     try {
-      const result = await api.post<CalcRun>('/api/calc/run', { year, force })
+      const result = await api.post<CalcRun>('/api/calc/run', {
+        year,
+        force,
+        balance_check: balanceCheck,
+      })
       if (result.status === 'ok') load()
       else setCalcError(result.error ?? { type: 'unknown', message: 'Calculation failed' })
     } catch (e) {
@@ -70,7 +82,13 @@ export default function ReportView({ year }: { year: number }) {
         </p>
       )}
 
-      {calcError && <CalcErrorCard error={calcError} onFixed={() => run(true)} />}
+      {calcError && (
+        <CalcErrorCard
+          error={calcError}
+          onFixed={() => run(true)}
+          onWaiveBalanceCheck={() => run(true, false)}
+        />
+      )}
 
       {noRun && !running && !calcError && (
         <p className="muted">No calculation yet for this year — hit Calculate.</p>
@@ -84,11 +102,16 @@ export default function ReportView({ year }: { year: number }) {
 function CalcErrorCard({
   error,
   onFixed,
+  onWaiveBalanceCheck,
 }: {
   error: NonNullable<CalcRun['error']>
   onFixed: () => void
+  onWaiveBalanceCheck: () => void
 }) {
   const [src, setSrc] = useState('')
+  if (error.type === 'negative_balance') {
+    return <BalanceErrorCard error={error} onWaive={onWaiveBalanceCheck} />
+  }
   if (error.type === 'unknown_spin_off') {
     return (
       <section className="card warn-card">
@@ -117,9 +140,128 @@ function CalcErrorCard({
   return (
     <section className="card error-card">
       <b>Calculation failed ({error.type})</b>
-      <p className="error-message">{error.message}</p>
+      <ErrorMessage text={error.message} />
       {error.transaction && <ErrorTransactionTable tx={error.transaction} />}
     </section>
+  )
+}
+
+// Engine messages are usually a sentence, but some (parser dumps, tracebacks)
+// run to hundreds of lines — those stay folded away until asked for.
+const MESSAGE_INLINE_LIMIT = 240
+
+function ErrorMessage({ text }: { text: string }) {
+  const [first, ...rest] = text.split('\n')
+  if (rest.length === 0 && text.length <= MESSAGE_INLINE_LIMIT) {
+    return <p className="error-message">{text}</p>
+  }
+  return (
+    <>
+      <p className="error-message">{first.slice(0, MESSAGE_INLINE_LIMIT)}</p>
+      <details className="error-details">
+        <summary>Show the full engine message</summary>
+        <pre>{text}</pre>
+      </details>
+    </>
+  )
+}
+
+// The cash-balance check is the engine's only guard against a document set that
+// is silently short of rows, so its failure is reported rather than worked
+// around; waiving it is a deliberate, single-run choice made here.
+function BalanceErrorCard({
+  error,
+  onWaive,
+}: {
+  error: NonNullable<CalcRun['error']>
+  onWaive: () => void
+}) {
+  const confirm = useConfirm()
+  const ledger = error.ledger ?? []
+  const broker = error.broker ?? 'the broker'
+  const currency = error.currency ?? 'GBP'
+
+  const waive = async () => {
+    const { ok } = await confirm({
+      title: 'Recalculate without the cash-balance check?',
+      danger: true,
+      confirmLabel: 'Run without the check',
+      message: (
+        <>
+          <p>
+            The balance check is the one thing that notices a document set missing whole rows. Turn
+            it off and a sale or dividend your export never included is simply absent: the report
+            still renders, the figures come out too low, and nothing says so.
+          </p>
+          <p>
+            Only do this if you have looked at the ledger and the account is short of{' '}
+            <b>deposits or withdrawals</b> — money moving in or out, which affects no figure on your
+            return. The run is marked, and the report carries a warning.
+          </p>
+        </>
+      ),
+    })
+    if (ok) onWaive()
+  }
+
+  return (
+    <section className="card error-card">
+      <b>Cash balance check failed</b>
+      <p className="error-message">{error.message}</p>
+      <p className="error-hint">
+        Most often the export doesn&rsquo;t reach back to the account&rsquo;s first deposit, or the
+        broker posts no cash row for something that funded a purchase — a maturing T-bill, a
+        transfer in. Gains, dividends and interest don&rsquo;t depend on this balance; they depend
+        only on every buy, sell, dividend and interest row being present.
+      </p>
+      {ledger.length > 0 && (
+        <details className="error-details">
+          <summary>
+            Cash ledger: the last {ledger.filter((r) => !r.note).length} {broker} {currency} rows
+          </summary>
+          <BalanceLedgerTable rows={ledger} currency={currency} />
+        </details>
+      )}
+      <div className="card-actions">
+        <button className="btn primary danger" onClick={waive}>
+          Recalculate without the balance check
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function BalanceLedgerTable({ rows, currency }: { rows: BalanceLedgerRow[]; currency: string }) {
+  return (
+    <table className="balance-ledger">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Transaction</th>
+          <th className="right">Amount ({currency})</th>
+          <th className="right">Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) =>
+          r.note ? (
+            <tr key={i} className="ledger-note">
+              <td colSpan={4}>{r.note}</td>
+            </tr>
+          ) : (
+            <tr key={i} className={Number(r.balance) < 0 ? 'ledger-negative' : undefined}>
+              <td>{shortDate(r.date)}</td>
+              <td>
+                {r.description || r.symbol || '—'}
+                {r.action && <span className="ledger-action">{r.action.toLowerCase()}</span>}
+              </td>
+              <td className="right">{num(r.amount)}</td>
+              <td className="right">{num(r.balance)}</td>
+            </tr>
+          ),
+        )}
+      </tbody>
+    </table>
   )
 }
 

@@ -119,12 +119,29 @@ export interface ErrorTransaction {
   broker: string
 }
 
+// One line of the cash ledger the balance check prints when it fails; `note`
+// stands in for the "N earlier transactions omitted" marker.
+export interface BalanceLedgerRow {
+  date?: string | null
+  action?: string | null
+  symbol?: string | null
+  description?: string | null
+  amount?: string | null
+  balance?: string | null
+  note?: string
+}
+
 export interface CalcError {
   type: string
   message: string
   symbol?: string
   // The offending row, for InvalidTransactionError and its subclasses.
   transaction?: ErrorTransaction
+  // negative_balance only.
+  broker?: string
+  currency?: string
+  balance?: string
+  ledger?: BalanceLedgerRow[]
 }
 
 export interface CalcRun {

@@ -531,6 +531,76 @@ select:focus {
   word-break: break-word;
 }
 
+.error-card .error-hint {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.error-details {
+  margin: 4px 0 10px;
+}
+
+.error-details summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.error-details pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  background: rgba(25, 21, 33, 0.05);
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin: 8px 0 0;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.balance-ledger {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.balance-ledger th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 3px 14px 5px 0;
+  white-space: nowrap;
+}
+
+.balance-ledger td {
+  padding: 3px 14px 3px 0;
+  font-variant-numeric: tabular-nums;
+  border-top: 1px solid var(--border);
+}
+
+.balance-ledger th.right,
+.balance-ledger td.right {
+  text-align: right;
+  padding-right: 0;
+}
+
+.balance-ledger .ledger-action {
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+.balance-ledger .ledger-note td {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.balance-ledger .ledger-negative td {
+  color: var(--bad);
+  font-weight: 600;
+}
+
 .error-transaction {
   border-collapse: collapse;
   font-size: 13px;

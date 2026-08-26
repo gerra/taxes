@@ -26,6 +26,14 @@ ENGINE_VERSION = 2
 
 RAW_HEADER = ["date", "action", "symbol", "quantity", "price", "fees", "currency"]
 
+# Attached to any run whose cash-balance check was waived. core.notices matches
+# it into the "balance" notice, so the report always says the check was skipped.
+BALANCE_CHECK_WAIVED_WARNING = (
+    "Cash balance didn't reconcile — you ran this calculation without the balance "
+    "check, so missing deposits/withdrawals went unflagged. Figures are correct as "
+    "long as every buy/sell/dividend row is present."
+)
+
 _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d %b %Y", "%d.%m.%Y", "%m/%d/%Y"]
 
 
@@ -298,11 +306,14 @@ def build_document_set(user_id: int, work_dir: str) -> tuple[dict, list[str]]:
     return files, warnings
 
 
-def compute_input_hash(user_id: int, tax_year: int) -> str:
+def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) -> str:
     material = {
         "tax_year": tax_year,
         "fork": fork_version(),
         "engine": ENGINE_VERSION,
+        # A run with the cash-balance check waived is a different calculation,
+        # so it must not be served from (or overwrite) a checked run's cache.
+        "balance_check": balance_check,
         "docs": sorted((d["account_id"], d["sha256"]) for d in repo.list_documents(user_id)),
         "spin_offs": sorted((r["dst"], r["src"]) for r in repo.list_spin_offs(user_id)),
         "mappings": sorted(
@@ -346,9 +357,16 @@ def validate_upload(account: dict, file_path: str) -> dict:
         shutil.rmtree(work_dir, ignore_errors=True)
 
 
-def run_calculation(user_id: int, tax_year: int, force: bool = False) -> dict:
-    """Run (or return the cached) calculation for a tax year. Synchronous."""
-    input_hash = compute_input_hash(user_id, tax_year)
+def run_calculation(
+    user_id: int, tax_year: int, force: bool = False, balance_check: bool = True
+) -> dict:
+    """Run (or return the cached) calculation for a tax year. Synchronous.
+
+    balance_check=False waives cgt-calc's cash-reconciliation check. It is never
+    inferred: partial exports and genuinely missing trades fail it the same way,
+    and only the user knows which they have, so the failure is reported and the
+    waiver is an explicit choice made in the UI."""
+    input_hash = compute_input_hash(user_id, tax_year, balance_check)
     if not force:
         existing = repo.find_calc_run(user_id, tax_year, input_hash)
         if existing and existing["status"] == "ok":
@@ -379,28 +397,12 @@ def run_calculation(user_id: int, tax_year: int, force: bool = False) -> dict:
             "isin_translation_file": os.path.join(paths.CACHE_DIR, "isin_translation.csv"),
             "work_dir": work_dir,
             "pdf_path": pdf_path,
-            "balance_check": True,
+            "balance_check": balance_check,
         }
+        if not balance_check:
+            set_warnings.append(BALANCE_CHECK_WAIVED_WARNING)
         repo.set_calc_run_status(run["id"], "running")
         result = _run_worker(job, work_dir)
-        if (
-            not result.get("ok")
-            and "balance" in str(result.get("error", {}).get("message", "")).lower()
-        ):
-            # Cash-balance reconciliation failed — usually deposits/withdrawals
-            # missing from partial exports (Freetrade windows). Gains/dividends
-            # are unaffected if all trades are present, so retry without it and
-            # surface a warning instead of failing the run.
-            job["balance_check"] = False
-            retry = _run_worker(job, work_dir)
-            if retry.get("ok"):
-                set_warnings.append(
-                    "Cash balance didn't reconcile — some deposits/withdrawals are "
-                    "missing from your documents. The calculation ran without the "
-                    "balance check; figures are correct as long as every buy/sell/"
-                    "dividend row is present."
-                )
-                result = retry
         if result.get("ok"):
             bundle = result["bundle"]
             bundle["warnings"] = set_warnings + bundle.get("warnings", [])

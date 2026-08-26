@@ -112,3 +112,23 @@ def test_fork_version_is_commit_or_version():
 
     v = fork_version()
     assert v and v != "unknown"
+
+
+def test_waiving_the_balance_check_is_its_own_cached_calculation(user):
+    """A run with the check waived must never be served as a checked run."""
+    from engine.runner import compute_input_hash
+
+    checked = compute_input_hash(user["id"], 2024)
+    waived = compute_input_hash(user["id"], 2024, balance_check=False)
+    assert checked != waived
+    assert compute_input_hash(user["id"], 2024, balance_check=True) == checked
+
+
+def test_waived_run_warning_reaches_the_report_as_the_balance_notice():
+    """The warning the runner attaches must be the one notices.py recognises."""
+    from core.notices import build_notices
+    from engine.runner import BALANCE_CHECK_WAIVED_WARNING
+
+    notices = build_notices([BALANCE_CHECK_WAIVED_WARNING])
+    assert [n["key"] for n in notices] == ["balance"]
+    assert notices[0]["category"] == "balance"
