@@ -26,13 +26,13 @@ const FIELDS: { key: string; label: string; where: string }[] = [
     key: 'pension_employee',
     label: 'Pension via payroll — yours',
     where:
-      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD”, or your workplace pension’s annual statement.',
+      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD” (often labelled “EEs Pension” or “AE Pension EE”), or your workplace pension’s annual statement. Payslips show it as a negative deduction — enter it as a positive number, without the “-”.',
   },
   {
     key: 'pension_employer',
     label: 'Pension via payroll — employer',
     where:
-      'Employer contributions this tax year: payslip “Employer pension YTD”, or the workplace pension’s annual statement. Counts towards the £60,000 annual allowance.',
+      'Employer contributions this tax year: final March payslip → “Employer pension YTD” (often labelled “ERs Pension” or “AE Pension ER”), or the workplace pension’s annual statement. Enter as a positive number. Counts towards the £60,000 annual allowance.',
   },
   {
     key: 'sipp_paid',
@@ -140,6 +140,7 @@ export default function PlannerView({ year }: { year: number }) {
               <input
                 type="number"
                 inputMode="decimal"
+                min="0"
                 placeholder="0"
                 value={inputs[f.key] ?? ''}
                 onChange={(e) => setInputs({ ...inputs, [f.key]: e.target.value })}
