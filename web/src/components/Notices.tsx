@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { api } from '../api'
-import type { Notice } from '../types'
+import type { Notice, VerificationCheck } from '../types'
 import { shortDate } from '../utils/format'
 
 // Renders text with [[value]] tokens as highlighted pills.
@@ -72,6 +72,21 @@ const KIND_LABEL: Record<Notice['kind'], string> = {
   error: 'error',
 }
 
+const CHECK_GLYPH: Record<VerificationCheck['status'], string> = {
+  ok: '✓',
+  fail: '✗',
+  warn: '!',
+  info: 'i',
+  pending: '…',
+}
+
+function toneFor(notice: Notice): Tone {
+  const status = notice.resolution?.status
+  if (status === 'verified') return 'resolved'
+  if (status === 'mismatch') return 'error'
+  return notice.kind
+}
+
 export default function Notices({
   notices,
   onChange,
@@ -80,7 +95,8 @@ export default function Notices({
   onChange?: () => void
 }) {
   if (notices.length === 0) return null
-  const open = notices.filter((n) => !n.resolution)
+  const verified = notices.filter((n) => n.resolution?.status === 'verified')
+  const open = notices.filter((n) => n.resolution?.status !== 'verified')
   const counts = open.reduce<Record<string, number>>((acc, n) => {
     acc[n.kind] = (acc[n.kind] ?? 0) + 1
     return acc
@@ -88,8 +104,7 @@ export default function Notices({
   const parts = (['error', 'warning', 'info'] as const)
     .filter((k) => counts[k])
     .map((k) => `${counts[k]} ${KIND_LABEL[k]}${counts[k] === 1 ? '' : 's'}`)
-  const resolvedCount = notices.length - open.length
-  if (resolvedCount) parts.push(`${resolvedCount} confirmed`)
+  if (verified.length) parts.push(`${verified.length} verified`)
 
   return (
     <section className="notices">
@@ -106,13 +121,14 @@ export default function Notices({
 
 function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => void }) {
   const [open, setOpen] = useState(false)
-  const [resolving, setResolving] = useState(false)
+  const [editing, setEditing] = useState(false)
   const res = notice.resolution ?? null
-  const tone: Tone = res ? 'resolved' : notice.kind
+  const tone = toneFor(notice)
   const hasMore = Boolean(notice.why || notice.raw.length)
+  const canVerify = Boolean(onChange) && notice.kind !== 'info'
 
   const remove = async () => {
-    if (!confirm('Remove this confirmation and its attached evidence?')) return
+    if (!confirm('Remove this verification and its attached evidence?')) return
     await api.del(`/api/notices/${notice.key}`)
     onChange?.()
   }
@@ -124,7 +140,9 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
         <div className="notice-title">
           <Hl text={notice.title} />
           {notice.count > 1 && <span className="notice-count">×{notice.count}</span>}
-          {res && <span className="badge ok">Confirmed</span>}
+          {res?.status === 'verified' && <span className="badge ok">Verified</span>}
+          {res?.status === 'mismatch' && <span className="badge bad">Doesn’t add up</span>}
+          {res?.status === 'partial' && <span className="badge warn">Partially checked</span>}
         </div>
         {notice.summary && (
           <div className="notice-summary">
@@ -146,36 +164,47 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
           </div>
         )}
 
-        {res && (
+        {res && !editing && (
           <div className="notice-resolution">
-            {res.check && <div className={`check ${res.verified ? 'ok' : 'bad'}`}>{res.check}</div>}
-            {res.note && <div>{res.note}</div>}
+            <ul className="checks">
+              {res.checks.map((c, i) => (
+                <li key={i} className={`check-${c.status}`}>
+                  <span className="check-glyph">{CHECK_GLYPH[c.status]}</span>
+                  <span>
+                    <b>{c.label}</b>
+                    {c.detail && <> — {c.detail}</>}
+                    {c.status === 'pending' && <> — not answered yet</>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {res.missing.length > 0 && (
+              <div className="muted small">Still needed: {res.missing.join(', ')}</div>
+            )}
+            {res.note && <div className="resolution-note">{res.note}</div>}
             <div className="meta">
-              <span>Confirmed {shortDate(res.created_at.slice(0, 10))}</span>
-              {res.evidence_name && (
+              <span>Checked {shortDate(res.created_at.slice(0, 10))}</span>
+              {res.evidence_name ? (
                 <a href={`/api/notices/${notice.key}/evidence`} target="_blank" rel="noreferrer">
                   📎 {res.evidence_name}
                 </a>
+              ) : (
+                <span>no evidence attached</span>
               )}
             </div>
           </div>
         )}
 
         <div className="notice-actions">
-          {!res && notice.kind !== 'info' && !resolving && onChange && (
-            <button className="link" onClick={() => setResolving(true)}>
-              Confirm with evidence
+          {canVerify && !editing && (
+            <button className="link" onClick={() => setEditing(true)}>
+              {res ? 'Edit answers' : 'Verify this'}
             </button>
           )}
-          {res && onChange && (
-            <>
-              <button className="link" onClick={() => setResolving(true)}>
-                Edit
-              </button>
-              <button className="link danger" onClick={remove}>
-                Remove confirmation
-              </button>
-            </>
+          {res && !editing && onChange && (
+            <button className="link danger" onClick={remove}>
+              Remove verification
+            </button>
           )}
           {hasMore && (
             <button className="link notice-more" onClick={() => setOpen(!open)}>
@@ -184,14 +213,14 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
           )}
         </div>
 
-        {resolving && (
-          <ResolveForm
+        {editing && (
+          <VerifyForm
             notice={notice}
             onDone={() => {
-              setResolving(false)
+              setEditing(false)
               onChange?.()
             }}
-            onCancel={() => setResolving(false)}
+            onCancel={() => setEditing(false)}
           />
         )}
 
@@ -213,7 +242,7 @@ function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => voi
   )
 }
 
-function ResolveForm({
+function VerifyForm({
   notice,
   onDone,
   onCancel,
@@ -222,19 +251,23 @@ function ResolveForm({
   onDone: () => void
   onCancel: () => void
 }) {
+  const spec = notice.verification ?? { intro: '', docs: [], fields: [] }
+  const [values, setValues] = useState<Record<string, string>>({
+    ...(notice.resolution?.data ?? {}),
+  })
   const [note, setNote] = useState(notice.resolution?.note ?? '')
-  const [withholding, setWithholding] = useState(notice.resolution?.data?.withholding ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const isSellToCover = notice.category === 'amount_adjusted'
+
+  const set = (key: string, value: string) => setValues({ ...values, [key]: value })
 
   const save = async () => {
     setSaving(true)
     setError('')
     const form = new FormData()
     form.append('note', note)
-    if (isSellToCover) form.append('withholding', withholding)
+    for (const [k, v] of Object.entries(values)) if (v !== '') form.append(k, v)
     const file = fileRef.current?.files?.[0]
     if (file) form.append('file', file)
     try {
@@ -248,39 +281,86 @@ function ResolveForm({
 
   return (
     <div className="resolve-form">
+      {spec.intro && <p className="verify-intro">{spec.intro}</p>}
+
+      {spec.docs.length > 0 && (
+        <div className="verify-docs">
+          <div className="verify-heading">What to get</div>
+          <ol>
+            {spec.docs.map((d, i) => (
+              <li key={i}>
+                <b>{d.title}</b>
+                <span className="muted"> — {d.where}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {spec.fields.length > 0 && (
+        <>
+          <div className="verify-heading">What it says</div>
+          <div className="mapping-grid">
+            {spec.fields.map((f) =>
+              f.type === 'checkbox' ? (
+                <label key={f.key} className="verify-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={values[f.key] === 'true'}
+                    onChange={(e) => set(f.key, e.target.checked ? 'true' : 'false')}
+                  />
+                  {f.label}
+                </label>
+              ) : (
+                <label key={f.key}>
+                  {f.label}
+                  {f.required && <span className="req"> *</span>}
+                  {f.type === 'choice' ? (
+                    <select
+                      value={values[f.key] ?? ''}
+                      onChange={(e) => set(f.key, e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {(f.options ?? []).map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={f.type === 'date' ? 'date' : 'text'}
+                      inputMode={f.type === 'money' ? 'decimal' : undefined}
+                      placeholder={f.type === 'money' ? '0.00' : undefined}
+                      value={values[f.key] ?? ''}
+                      onChange={(e) => set(f.key, e.target.value)}
+                    />
+                  )}
+                </label>
+              ),
+            )}
+          </div>
+        </>
+      )}
+
       <div className="mapping-grid">
-        {isSellToCover && (
-          <label>
-            Withholding taxes on this trade (from the broker’s trade details)
-            <input
-              inputMode="decimal"
-              placeholder="e.g. 10966.96"
-              value={withholding}
-              onChange={(e) => setWithholding(e.target.value)}
-            />
-          </label>
-        )}
         <label>
-          Evidence (PDF or screenshot, optional)
+          Evidence (PDF or screenshot)
           <input ref={fileRef} type="file" accept=".pdf,image/*" />
         </label>
+        <label>
+          Note
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Anything else you checked"
+          />
+        </label>
       </div>
-      <label className="muted small">
-        Note
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={
-            isSellToCover
-              ? 'e.g. RSU vest sell-to-cover — Schwab withheld tax from the proceeds'
-              : 'What you checked / why this is fine'
-          }
-        />
-      </label>
       {error && <p className="error-text small">{error}</p>}
       <div className="card-actions">
         <button className="btn primary" disabled={saving} onClick={save}>
-          {saving ? 'Saving…' : 'Save confirmation'}
+          {saving ? 'Checking…' : 'Save & check'}
         </button>
         <button className="btn" onClick={onCancel}>
           Cancel

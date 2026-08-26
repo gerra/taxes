@@ -1,16 +1,18 @@
-"""Notice resolutions: the user confirms a warning with a note, optional
-sell-to-cover withholding amount, and optional evidence file (e.g. the broker's
-trade-details PDF). Evidence is Fernet-encrypted at rest like documents."""
+"""Notice resolutions: the user verifies a warning through the guided form
+(core.notices.VERIFICATION) — typed answers, optional evidence file (e.g. the
+broker's trade-details PDF), and a note. Evidence is Fernet-encrypted at rest."""
 
 import io
 import mimetypes
 import os
 import re
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, g, jsonify, request, send_file
 
 from core import crypto, paths, repo
+from core.notices import verification_for
 
 bp = Blueprint("notices", __name__, url_prefix="/api/notices")
 
@@ -23,18 +25,46 @@ def _valid_key(key: str) -> bool:
     return bool(_KEY_RE.match(key))
 
 
+def _parse_fields(category: str, form) -> tuple[dict, str | None]:
+    """Validate submitted answers against the category's field spec.
+    Returns (data, error)."""
+    data: dict = {}
+    for field in verification_for(category)["fields"]:
+        raw = (form.get(field["key"]) or "").strip()
+        if not raw:
+            continue
+        kind = field["type"]
+        if kind == "money":
+            try:
+                data[field["key"]] = str(Decimal(raw.replace(",", "").lstrip("$£€")))
+            except InvalidOperation:
+                return {}, f"{field['label']} must be a number"
+        elif kind == "date":
+            try:
+                data[field["key"]] = date.fromisoformat(raw).isoformat()
+            except ValueError:
+                return {}, f"{field['label']} must be a date (YYYY-MM-DD)"
+        elif kind == "choice":
+            allowed = {o["value"] for o in field.get("options", [])}
+            if raw not in allowed:
+                return {}, f"{field['label']}: invalid choice"
+            data[field["key"]] = raw
+        elif kind == "checkbox":
+            data[field["key"]] = "true" if raw.lower() in ("true", "1", "on", "yes") else "false"
+        else:
+            data[field["key"]] = raw[:500]
+    return data, None
+
+
 @bp.put("/<key>")
 def resolve(key: str):
     if not _valid_key(key):
         return jsonify({"error": "Bad notice key"}), 400
+    category = key.split("__", 1)[0]
     note = (request.form.get("note") or "").strip()
-    data: dict = {}
-    raw_withholding = (request.form.get("withholding") or "").strip()
-    if raw_withholding:
-        try:
-            data["withholding"] = str(Decimal(raw_withholding.replace(",", "").lstrip("$£€")))
-        except InvalidOperation:
-            return jsonify({"error": "Withholding must be a number"}), 400
+    data, err = _parse_fields(category, request.form)
+    if err:
+        return jsonify({"error": err}), 400
 
     evidence_name = None
     file = request.files.get("file")
@@ -52,6 +82,11 @@ def resolve(key: str):
         with open(dest, "wb") as f:
             f.write(crypto.encrypt(blob))
         evidence_name = file.filename
+
+    if not note and not data and not evidence_name:
+        return jsonify(
+            {"error": "Nothing to save — answer a question, attach a file or add a note"}
+        ), 400
 
     repo.upsert_resolution(g.user_id, key, note, data, evidence_name)
     return jsonify(repo.get_resolution(g.user_id, key))

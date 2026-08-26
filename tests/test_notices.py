@@ -80,19 +80,25 @@ def test_resolution_verifies_sell_to_cover_arithmetic():
     notices = build_notices([DISCREPANCY, BNB_1])
     resolutions = {
         "amount_adjusted__META__2025-02-25": {
-            "note": "RSU sell-to-cover",
-            "data": {"withholding": "10966.96"},
+            "note": "backup withholding",
+            "data": {"principal": "45695.65", "withholding": "10966.96", "reason": "backup"},
             "evidence_name": "trade.pdf",
             "created_at": "2026-08-26 10:00:00",
         }
     }
     apply_resolutions(notices, resolutions)
-    # resolved notices sort last
+    # fully verified notices sort last
     assert notices[-1]["category"] == "amount_adjusted"
     res = notices[-1]["resolution"]
+    assert res["status"] == "verified"
     assert res["verified"] is True
-    assert "$45,694.37 − $10,966.96 withholding = $34,727.41" in res["check"]
+    labels = {c["label"]: c["status"] for c in res["checks"]}
+    assert labels["Principal matches quantity × price"] == "ok"
+    assert labels["Withholding explains the missing amount"] == "ok"
+    assert labels["Tax treatment"] == "info"
+    assert "$45,694.37 (after $1.28 fees) − $10,966.96 = $34,727.41" in res["check"]
     assert notices[0]["resolution"] is None
+    assert notices[0]["verification"]["fields"] == []  # info notice: nothing to verify
 
 
 def test_resolution_flags_mismatch():
@@ -110,8 +116,30 @@ def test_resolution_flags_mismatch():
             }
         },
     )
-    assert notices[0]["resolution"]["verified"] is False
-    assert "off by" in notices[0]["resolution"]["check"]
+    res = notices[0]["resolution"]
+    assert res["status"] == "mismatch"
+    assert res["verified"] is False
+    assert "off by" in res["check"]
+    assert "Principal" in " ".join(res["missing"])
+
+
+def test_partial_resolution_stays_open():
+    from core.notices import apply_resolutions
+
+    notices = build_notices([TREATY_1])
+    apply_resolutions(
+        notices,
+        {
+            "withholding__META": {
+                "note": "looking",
+                "data": {},
+                "evidence_name": None,
+                "created_at": "",
+            }
+        },
+    )
+    assert notices[0]["resolution"]["status"] == "partial"
+    assert notices[0]["resolution"]["checks"][0]["status"] == "pending"
 
 
 def test_discrepancy_detects_backup_withholding():

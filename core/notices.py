@@ -18,6 +18,7 @@ _DISCREPANCY = re.compile(
     r".*?symbol='([^']*)'"
     r".*?quantity=Decimal\('([^']*)'\)"
     r".*?price=Decimal\('([^']*)'\)"
+    r".*?fees=Decimal\('([^']*)'\)"
     r".*?currency='([^']*)'"
     r".*?broker='([^']*)'"
     r".*?supplied=(-?\d+(?:\.\d+)?), calculated=(-?\d+(?:\.\d+)?)"
@@ -62,7 +63,7 @@ def _num(value: str) -> str:
 
 
 def _discrepancy(m: re.Match, raw: str) -> dict:
-    y, mo, d, action, symbol, qty, price, ccy, broker, supplied, calculated = m.groups()
+    y, mo, d, action, symbol, qty, price, fees, ccy, broker, supplied, calculated = m.groups()
     verb = "sale" if action == "SELL" else action.lower()
     missing = Decimal(calculated) - Decimal(supplied)
     ratio = (missing / Decimal(calculated)) if Decimal(calculated) else Decimal(0)
@@ -105,7 +106,14 @@ def _discrepancy(m: re.Match, raw: str) -> dict:
         )
     return {
         "key": f"amount_adjusted__{symbol}__{int(y):04d}-{int(mo):02d}-{int(d):02d}",
-        "data": {"supplied": supplied, "calculated": calculated, "currency": ccy},
+        "data": {
+            "supplied": supplied,
+            "calculated": calculated,
+            "currency": ccy,
+            "quantity": qty,
+            "price": price,
+            "fees": fees,
+        },
         "kind": "warning",
         "category": "amount_adjusted",
         "title": f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — tax withheld from proceeds"
@@ -271,43 +279,301 @@ def build_notices(warnings: list[str]) -> list[dict]:
 
 _KIND_ORDER = {"error": 0, "warning": 1, "info": 2}
 
+# What the user must gather and enter to verify each notice type. The UI renders
+# these as a guided form; `checks` in apply_resolutions() grade the answers.
+VERIFICATION: dict[str, dict] = {
+    "amount_adjusted": {
+        "intro": "Verify the sale against the broker's own trade record.",
+        "docs": [
+            {
+                "title": "Trade transaction details for this sale",
+                "where": "Schwab → Accounts → History → click the transaction → Print / save as PDF",
+            }
+        ],
+        "fields": [
+            {
+                "key": "principal",
+                "label": "Principal (gross value on the trade details)",
+                "type": "money",
+                "required": True,
+            },
+            {
+                "key": "withholding",
+                "label": "Withholding taxes on the trade details",
+                "type": "money",
+                "required": True,
+            },
+            {
+                "key": "reason",
+                "label": "What is this withholding?",
+                "type": "choice",
+                "required": True,
+                "options": [
+                    {"value": "backup", "label": "US backup withholding — no valid W-8BEN on file"},
+                    {
+                        "value": "sell_to_cover",
+                        "label": "Sell-to-cover at an RSU vest (tax via payroll)",
+                    },
+                    {"value": "other", "label": "Something else — explain in the note"},
+                ],
+            },
+            {
+                "key": "refunded",
+                "label": "Amount refunded later, if any",
+                "type": "money",
+                "required": False,
+            },
+        ],
+    },
+    "withholding": {
+        "intro": "Establish why more than the treaty 15% was withheld.",
+        "docs": [
+            {"title": "W-8BEN status and expiry", "where": "Schwab → Profile → Tax forms"},
+            {
+                "title": "Form 1042-S for the tax year",
+                "where": "Schwab → Accounts → Statements & Tax forms → Tax forms",
+            },
+        ],
+        "fields": [
+            {
+                "key": "w8ben_status",
+                "label": "W-8BEN status",
+                "type": "choice",
+                "required": True,
+                "options": [
+                    {"value": "valid", "label": "Valid — in date"},
+                    {"value": "expired", "label": "Expired or missing"},
+                    {"value": "renewed", "label": "Renewed since"},
+                ],
+            },
+            {
+                "key": "w8ben_date",
+                "label": "W-8BEN expiry or renewal date",
+                "type": "date",
+                "required": False,
+            },
+        ],
+    },
+    "balance": {
+        "intro": "Confirm nothing that affects gains or income is missing.",
+        "docs": [
+            {
+                "title": "Export reaching back to the account's first deposit",
+                "where": "Same broker export flow, widest date range available",
+            }
+        ],
+        "fields": [
+            {
+                "key": "all_rows_present",
+                "label": "I've checked every buy, sell, dividend and interest row is present",
+                "type": "checkbox",
+                "required": True,
+            }
+        ],
+    },
+    "other": {"intro": "Record what you checked.", "docs": [], "fields": []},
+}
+
+
+def verification_for(category: str) -> dict:
+    return VERIFICATION.get(category, VERIFICATION["other"])
+
+
+def _dec(value) -> Decimal | None:
+    try:
+        return Decimal(str(value)) if value not in (None, "") else None
+    except InvalidOperation:
+        return None
+
+
+def _checks_amount_adjusted(n: dict, data: dict) -> list[dict]:
+    d = n["data"]
+    ccy = d["currency"]
+    calc, supplied = Decimal(d["calculated"]), Decimal(d["supplied"])
+    qty, price, fees = (
+        _dec(d.get("quantity")),
+        _dec(d.get("price")),
+        _dec(d.get("fees")) or Decimal(0),
+    )
+    checks = []
+
+    principal = _dec(data.get("principal"))
+    if principal is None:
+        checks.append({"label": "Principal matches quantity × price", "status": "pending"})
+    elif qty is not None and price is not None:
+        expected = qty * price
+        ok = abs(principal - expected) < Decimal("0.05")
+        checks.append(
+            {
+                "label": "Principal matches quantity × price",
+                "status": "ok" if ok else "fail",
+                "detail": f"{_num(str(qty))} × {_money(price, ccy, 3)} = {_money(expected, ccy)}"
+                + ("" if ok else f", but trade details say {_money(principal, ccy)}"),
+            }
+        )
+
+    withholding = _dec(data.get("withholding"))
+    if withholding is None:
+        checks.append({"label": "Withholding explains the missing amount", "status": "pending"})
+    else:
+        diff = abs(calc - withholding - supplied)
+        ok = diff < Decimal("0.05")
+        checks.append(
+            {
+                "label": "Withholding explains the missing amount",
+                "status": "ok" if ok else "fail",
+                "detail": f"{_money(calc, ccy)} (after {_money(fees, ccy)} fees) − {_money(withholding, ccy)} "
+                f"= {_money(calc - withholding, ccy)}"
+                + (
+                    " — matches the broker's total"
+                    if ok
+                    else f" — broker total was {_money(supplied, ccy)} (off by {_money(diff, ccy)})"
+                ),
+            }
+        )
+
+    reason = data.get("reason")
+    if reason == "backup":
+        checks.append(
+            {
+                "label": "Tax treatment",
+                "status": "info",
+                "detail": "US backup withholding is not a UK deduction — CGT proceeds stay at the "
+                "full amount. Reclaim it from the IRS (Form 1040-NR with the 1042-S/1099-B). "
+                "Renew the W-8BEN to stop it recurring.",
+            }
+        )
+    elif reason == "sell_to_cover":
+        checks.append(
+            {
+                "label": "Tax treatment",
+                "status": "info",
+                "detail": "Sell-to-cover tax is income tax on the vest, collected via payroll — "
+                "already on your P60. Nothing extra on the UK return; CGT proceeds stay at the "
+                "full amount.",
+            }
+        )
+    elif reason == "other":
+        checks.append(
+            {
+                "label": "Tax treatment",
+                "status": "warn",
+                "detail": "Unexplained deduction — see note.",
+            }
+        )
+    else:
+        checks.append({"label": "Tax treatment", "status": "pending"})
+
+    refunded = _dec(data.get("refunded"))
+    if refunded:
+        checks.append(
+            {
+                "label": "Refund",
+                "status": "info",
+                "detail": f"{_money(refunded, ccy)} refunded later — no effect on the UK CGT figures.",
+            }
+        )
+    return checks
+
+
+def _checks_withholding(n: dict, data: dict) -> list[dict]:
+    status = data.get("w8ben_status")
+    when = data.get("w8ben_date")
+    when_txt = f" ({_fmt_iso(when)})" if when else ""
+    if status == "valid":
+        return [
+            {
+                "label": "W-8BEN",
+                "status": "warn",
+                "detail": f"Valid{when_txt}, yet 30% was withheld — ask the broker to correct their "
+                "records and refund the excess; it can't be reclaimed through the UK return.",
+            }
+        ]
+    if status == "expired":
+        return [
+            {
+                "label": "W-8BEN",
+                "status": "fail",
+                "detail": f"Expired or missing{when_txt} — renew it with the broker now. The extra 15% "
+                "already withheld is reclaimable only from the IRS (Form 1040-NR).",
+            }
+        ]
+    if status == "renewed":
+        return [
+            {
+                "label": "W-8BEN",
+                "status": "ok",
+                "detail": f"Renewed{when_txt} — future dividends should be withheld at 15%. Check the "
+                "next dividend to confirm.",
+            }
+        ]
+    return [{"label": "W-8BEN", "status": "pending"}]
+
+
+def _checks_balance(n: dict, data: dict) -> list[dict]:
+    if data.get("all_rows_present") in ("true", True, "1", "on"):
+        return [
+            {
+                "label": "Transactions complete",
+                "status": "ok",
+                "detail": "Missing deposits/withdrawals don't affect gains, dividends or interest.",
+            }
+        ]
+    return [{"label": "Transactions complete", "status": "pending"}]
+
+
+def _required_missing(n: dict, data: dict) -> list[str]:
+    spec = verification_for(n["category"])
+    missing = []
+    for f in spec["fields"]:
+        if f.get("required") and not data.get(f["key"]):
+            missing.append(f["label"])
+    return missing
+
 
 def apply_resolutions(notices: list[dict], resolutions: dict[str, dict]) -> list[dict]:
-    """Attach the user's confirmation (note, evidence, sell-to-cover withholding) to
-    each notice and verify the arithmetic where possible. Resolved notices sort last."""
+    """Attach the user's verification answers to each notice, grade them, and
+    sort verified notices last. resolution.status: verified | mismatch | partial."""
+    graders = {
+        "amount_adjusted": _checks_amount_adjusted,
+        "withholding": _checks_withholding,
+        "balance": _checks_balance,
+    }
     for n in notices:
+        n["verification"] = verification_for(n["category"])
         r = resolutions.get(n["key"])
         if not r:
             n["resolution"] = None
             continue
-        res = {
+        data = r["data"] or {}
+        checks = graders.get(n["category"], lambda _n, _d: [])(n, data)
+        statuses = [c["status"] for c in checks]
+        missing = _required_missing(n, data)
+        if "fail" in statuses:
+            status = "mismatch"
+        elif missing or "pending" in statuses:
+            status = "partial"
+        else:
+            status = "verified"
+        arithmetic = next((c for c in checks if c["label"].startswith("Withholding")), None)
+        n["resolution"] = {
             "note": r["note"],
-            "data": r["data"],
+            "data": data,
             "evidence_name": r["evidence_name"],
             "created_at": r["created_at"],
-            "verified": None,
-            "check": None,
+            "status": status,
+            "checks": checks,
+            "missing": missing,
+            # kept for older callers
+            "verified": None
+            if not arithmetic or arithmetic["status"] == "pending"
+            else arithmetic["status"] == "ok",
+            "check": arithmetic.get("detail") if arithmetic else None,
         }
-        withholding = r["data"].get("withholding")
-        if n["category"] == "amount_adjusted" and withholding:
-            try:
-                w = Decimal(str(withholding))
-                calc = Decimal(n["data"]["calculated"])
-                supplied = Decimal(n["data"]["supplied"])
-                ccy = n["data"]["currency"]
-                diff = abs(calc - w - supplied)
-                res["verified"] = diff < Decimal("0.05")
-                res["check"] = (
-                    f"{_money(calc, ccy)} − {_money(w, ccy)} withholding = "
-                    f"{_money(calc - w, ccy)}"
-                    + (
-                        " ✓ matches the broker's total"
-                        if res["verified"]
-                        else f" — broker total was {_money(supplied, ccy)} (off by {_money(diff, ccy)})"
-                    )
-                )
-            except (InvalidOperation, KeyError, TypeError):
-                pass
-        n["resolution"] = res
-    notices.sort(key=lambda n: (1 if n.get("resolution") else 0, _KIND_ORDER[n["kind"]]))
+    notices.sort(
+        key=lambda n: (
+            1 if (n.get("resolution") or {}).get("status") == "verified" else 0,
+            _KIND_ORDER[n["kind"]],
+        )
+    )
     return notices

@@ -127,18 +127,42 @@ export interface SABox {
   explain: string
 }
 
+export interface VerificationCheck {
+  label: string
+  status: 'ok' | 'fail' | 'warn' | 'info' | 'pending'
+  detail?: string
+}
+
 export interface NoticeResolution {
   note: string
   data: Record<string, string>
   evidence_name: string | null
   created_at: string
+  status: 'verified' | 'mismatch' | 'partial'
+  checks: VerificationCheck[]
+  missing: string[]
   verified: boolean | null
   check: string | null
+}
+
+export interface VerificationField {
+  key: string
+  label: string
+  type: 'money' | 'date' | 'choice' | 'checkbox' | 'text'
+  required?: boolean
+  options?: { value: string; label: string }[]
+}
+
+export interface Verification {
+  intro: string
+  docs: { title: string; where: string }[]
+  fields: VerificationField[]
 }
 
 export interface Notice {
   key: string
   data?: Record<string, string>
+  verification?: Verification
   resolution?: NoticeResolution | null
   kind: 'info' | 'warning' | 'error'
   category: string
