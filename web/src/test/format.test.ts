@@ -1,4 +1,11 @@
-import { gbp, lastElapsedTaxYear, num, shortDate, taxYearLabel } from '../utils/format'
+import {
+  currentTaxYear,
+  gbp,
+  lastElapsedTaxYear,
+  num,
+  shortDate,
+  taxYearLabel,
+} from '../utils/format'
 
 test('gbp formats decimals and handles nulls', () => {
   expect(gbp('1234.5')).toBe('£1,234.50')
@@ -20,6 +27,15 @@ test('lastElapsedTaxYear flips on 6 April', () => {
   expect(lastElapsedTaxYear(new Date('2026-08-26'))).toBe(2025)
   expect(lastElapsedTaxYear(new Date('2026-04-05'))).toBe(2024)
   expect(lastElapsedTaxYear(new Date('2026-04-06'))).toBe(2025)
+})
+
+test('currentTaxYear is the running one, a year ahead of the last filed', () => {
+  expect(currentTaxYear(new Date('2026-08-26'))).toBe(2026)
+  expect(currentTaxYear(new Date('2026-04-05'))).toBe(2025)
+  expect(currentTaxYear(new Date('2026-04-06'))).toBe(2026)
+  expect(currentTaxYear(new Date('2026-08-26')) - lastElapsedTaxYear(new Date('2026-08-26'))).toBe(
+    1,
+  )
 })
 
 test('taxYearLabel pads the second year', () => {

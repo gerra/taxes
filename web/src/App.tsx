@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import { useAuth } from './hooks/useAuth'
-import { lastElapsedTaxYear, taxYearLabel } from './utils/format'
+import { currentTaxYear, lastElapsedTaxYear, taxYearLabel } from './utils/format'
 import AdminView from './views/AdminView'
 import DocumentsView from './views/DocumentsView'
 import LoginView from './views/LoginView'
@@ -11,15 +11,18 @@ import ReportView from './views/ReportView'
 const TABS = ['Documents', 'Report', 'Planner'] as const
 type Tab = (typeof TABS)[number] | 'Admin'
 
-const CURRENT = lastElapsedTaxYear()
+// The year the app opens on is the last finished one — that's the one you file.
+// The running year is offered too: it's the only one you can still change.
+const LATEST_FILED = lastElapsedTaxYear()
+const IN_PROGRESS = currentTaxYear()
 
 export default function App() {
   const { user, loading, logout } = useAuth()
   const [tab, setTab] = useState<Tab>('Documents')
-  const [year, setYear] = useState(CURRENT)
-  // Only years the backend has constants for (core/tax_years.py), newest first,
-  // and never a year that hasn't finished yet.
-  const [years, setYears] = useState<number[]>([CURRENT])
+  const [year, setYear] = useState(LATEST_FILED)
+  // Only years the backend has constants for (core/tax_years.py), newest first;
+  // the running year is included, marked so nobody files off it.
+  const [years, setYears] = useState<number[]>([LATEST_FILED])
   // Admin only: pending access requests, shown as a badge on the Admin tab.
   const [pending, setPending] = useState(0)
 
@@ -32,7 +35,7 @@ export default function App() {
     api
       .get<{ years: number[] }>('/api/report/years')
       .then((r) => {
-        const usable = r.years.filter((y) => y <= CURRENT).sort((a, b) => b - a)
+        const usable = r.years.filter((y) => y <= IN_PROGRESS).sort((a, b) => b - a)
         if (usable.length) setYears(usable)
       })
       .catch(() => {})
@@ -74,6 +77,7 @@ export default function App() {
             {years.map((y) => (
               <option key={y} value={y}>
                 {taxYearLabel(y)}
+                {y === IN_PROGRESS ? ' — in progress' : ''}
               </option>
             ))}
           </select>

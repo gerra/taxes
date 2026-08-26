@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { PlannerData, Tip } from '../types'
-import { gbp, pct, shortDate, taxYearLabel } from '../utils/format'
+import { currentTaxYear, gbp, pct, shortDate, taxYearLabel } from '../utils/format'
 
 // Input fields for the planner; prior-year pension rows are named after the
 // actual tax years so they match a provider's statement.
@@ -28,7 +28,7 @@ const fields = (year: number): { key: string; label: string; where: string }[] =
     key: 'pension_employee',
     label: 'Pension via payroll — yours',
     where:
-      'Your own contributions deducted through salary this tax year: final March payslip → “Pension YTD” (often labelled “EEs Pension” or “AE Pension EE”), or your workplace pension’s annual statement. Payslips show it as a negative deduction — enter it as a positive number, without the “-”. Treated as salary sacrifice: it counts as an employer contribution for the annual allowance and is added back to threshold income for the taper test.',
+      'Your own contributions deducted through salary this tax year, additional voluntary contributions (AVCs) included: final March payslip → “Pension YTD” (often labelled “EEs Pension” or “AE Pension EE”), or your workplace pension’s annual statement. Payslips show it as a negative deduction — enter it as a positive number, without the “-”. Treated as salary sacrifice: it counts as an employer contribution for the annual allowance and is added back to threshold income for the taper test.',
   },
   {
     key: 'pension_employer',
@@ -40,7 +40,7 @@ const fields = (year: number): { key: string; label: string; where: string }[] =
     key: 'sipp_paid',
     label: 'SIPP paid personally (net)',
     where:
-      'What you actually transferred into a personal pension/SIPP this tax year — the provider’s contribution history. Enter the net amount; HMRC adds 25% on top automatically.',
+      'What you actually transferred into a personal pension, SIPP or standalone AVC contract this tax year — the provider’s contribution history. Enter the net amount; HMRC adds 25% on top automatically.',
   },
   {
     key: 'gift_aid_paid',
@@ -57,7 +57,7 @@ const fields = (year: number): { key: string; label: string; where: string }[] =
   {
     key: 'pension_prior_1',
     label: `Pension total, ${taxYearLabel(year - 1)}`,
-    where: `ALL contributions (yours + employer + SIPP gross) in the ${taxYearLabel(year - 1)} tax year (6 Apr ${year - 1} – 5 Apr ${year}). Sum the contribution rows between those dates in your pension provider's transaction history — transfers in don't count. Needed for carry-forward. Leave blank to use that year's own Planner pension fields instead. Enter that year's income in its own Planner so its taper can be checked — otherwise its carry-forward is flagged as unverified.`,
+    where: `ALL contributions (yours + employer + AVCs + SIPP gross) in the ${taxYearLabel(year - 1)} tax year (6 Apr ${year - 1} – 5 Apr ${year}). Sum the contribution rows between those dates in your pension provider's transaction history — transfers in don't count. Needed for carry-forward. Leave blank to use that year's own Planner pension fields instead. Enter that year's income in its own Planner so its taper can be checked — otherwise its carry-forward is flagged as unverified.`,
   },
   {
     key: 'pension_prior_2',
@@ -159,6 +159,17 @@ export default function PlannerView({ year }: { year: number }) {
 
       {data && (
         <>
+          {year === currentTaxYear() ? (
+            <div className="banner info">
+              {taxYearLabel(year)} is still running: everything below is still yours to take.
+              Allowances that go unused by 5 April {year + 1} don't carry forward.
+            </div>
+          ) : (
+            <div className="banner info">
+              {taxYearLabel(year)} has closed — this is the record of what was and wasn't used.
+              Switch to {taxYearLabel(currentTaxYear())} for what you can still act on.
+            </div>
+          )}
           {!data.has_report && (
             <div className="banner info">
               No calculation for this year yet — investment figures are treated as zero. Run the
@@ -244,16 +255,30 @@ function ProfileSummary({ data }: { data: PlannerData }) {
   )
 }
 
+// A benefit that is gone reads red; one still saveable but on a clock reads orange.
+const STATUS_BADGE = {
+  lost: { cls: 'bad', label: 'benefit lost' },
+  expiring: { cls: 'warn', label: 'expiring' },
+} as const
+
 function TipCard({ tip }: { tip: Tip }) {
   const [open, setOpen] = useState(false)
+  const badge = tip.status ? STATUS_BADGE[tip.status] : null
   return (
-    <section className={`card tip-card ${open ? 'open' : ''}`} onClick={() => setOpen(!open)}>
+    <section
+      className={`card tip-card ${tip.status ? `tip-${tip.status}` : ''} ${open ? 'open' : ''}`}
+      onClick={() => setOpen(!open)}
+    >
       <div className="card-head">
         <b>{tip.title}</b>
-        {tip.estimated_win_gbp != null && (
-          <span className="badge ok">save ~{gbp(tip.estimated_win_gbp, 0)}</span>
-        )}
+        <span className="tip-badges">
+          {badge && <span className={`badge ${badge.cls}`}>{badge.label}</span>}
+          {tip.estimated_win_gbp != null && (
+            <span className="badge ok">save ~{gbp(tip.estimated_win_gbp, 0)}</span>
+          )}
+        </span>
       </div>
+      {tip.status_note && <p className={`tip-status ${tip.status}`}>{tip.status_note}</p>}
       <p>{tip.what_to_do}</p>
       {tip.warnings.length > 0 && (
         <ul className="tip-warnings">
@@ -265,6 +290,16 @@ function TipCard({ tip }: { tip: Tip }) {
       {open && (
         <>
           <p className="muted">{tip.why}</p>
+          {tip.how_to_execute.length > 0 && (
+            <>
+              <p className="tip-steps-head">How to do it</p>
+              <ol className="tip-steps">
+                {tip.how_to_execute.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </>
+          )}
           {tip.detail && <pre className="tip-detail">{tip.detail}</pre>}
           {tip.deadline && <p className="muted small">Deadline: {shortDate(tip.deadline)}</p>}
         </>

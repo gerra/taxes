@@ -34,9 +34,14 @@ export function taxYearLabel(year: number): string {
   return `${year}/${String((year + 1) % 100).padStart(2, '0')}`
 }
 
-// Last tax year that has fully elapsed (tax year Y = 6 Apr Y to 5 Apr Y+1)
-export function lastElapsedTaxYear(today = new Date()): number {
+// The tax year today falls in — still running, so nothing in it is final.
+export function currentTaxYear(today = new Date()): number {
   const year = today.getFullYear()
   const pastApril5 = today.getMonth() > 3 || (today.getMonth() === 3 && today.getDate() >= 6)
-  return pastApril5 ? year - 1 : year - 2
+  return pastApril5 ? year : year - 1
+}
+
+// Last tax year that has fully elapsed (tax year Y = 6 Apr Y to 5 Apr Y+1)
+export function lastElapsedTaxYear(today = new Date()): number {
+  return currentTaxYear(today) - 1
 }

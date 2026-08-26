@@ -17,7 +17,18 @@ from core.pension_aa import ZERO, PensionYear, money
 
 
 def _tip(
-    id_, title, what, why, win, deadline=None, confidence="medium", detail=None, warnings=None
+    id_,
+    title,
+    what,
+    why,
+    win,
+    deadline=None,
+    confidence="medium",
+    detail=None,
+    warnings=None,
+    status=None,
+    status_note=None,
+    how_to_execute=None,
 ):
     return {
         "id": id_,
@@ -29,11 +40,51 @@ def _tip(
         "confidence": confidence,
         "detail": detail,
         "warnings": warnings or [],
+        # Ordered, concrete steps for claiming it — the "how", not the "why".
+        "how_to_execute": how_to_execute or [],
+        # A benefit already gone (LOST, red) or about to go (EXPIRING, orange).
+        "status": status,
+        "status_note": status_note,
     }
 
 
 def _gbp(d) -> str:
     return f"£{d:,.2f}"
+
+
+# ── Use-it-or-lose-it status ──────────────────────────────────────────────────
+#
+# Most of what the planner suggests is an allowance that dies at the end of the
+# tax year and never carries forward: the CGT annual exempt amount, the ISA
+# subscription limit, the personal allowance a contribution would have restored.
+# Looking at a closed year, those are LOST — say so in red instead of offering
+# an action that is no longer possible. In an open year they only turn EXPIRING
+# (orange) once 5 April is close enough to need a decision.
+
+LOST = "lost"
+EXPIRING = "expiring"
+EXPIRING_DAYS = 60  # how near 5 April an unused annual allowance starts flashing orange
+
+
+def _today(ctx) -> date:
+    return ctx.get("today") or date.today()
+
+
+def _year_closed(ctx) -> bool:
+    """True once the selected tax year has ended (6 April onwards)."""
+    return _today(ctx) > tax_years.tax_year_end(ctx["tax_year"])
+
+
+def _annual_status(ctx) -> str | None:
+    """Status for an allowance that dies with the selected tax year."""
+    today, end = _today(ctx), tax_years.tax_year_end(ctx["tax_year"])
+    if today > end:
+        return LOST
+    return EXPIRING if (end - today).days <= EXPIRING_DAYS else None
+
+
+def _year_end_str(tax_year: int) -> str:
+    return f"5 Apr {tax_year + 1}"
 
 
 # ── Pension annual allowance ───────────────────────────────────────────────────
@@ -183,7 +234,7 @@ def _pension_detail(res: dict, sel_year: int) -> str:
 
 def pension_headroom(ctx):
     sel_year, inputs, profile = ctx["tax_year"], ctx["inputs"], ctx["profile"]
-    today = ctx.get("today") or date.today()
+    today = _today(ctx)
     res = pension_aa.compute(sel_year, _pension_years(ctx))
     s = res["selected"]
     detail = _pension_detail(res, sel_year)
@@ -217,9 +268,40 @@ def pension_headroom(ctx):
         f"the charge is at your marginal rate (~{charge_tax}). Scheme Pays can settle a charge "
         "over £2,000 from the pension itself"
     )
+    settle_steps = [
+        f"Declare it on SA101 (Additional information), box 10 — 'Pension savings tax charges'. "
+        f"At your marginal rate that is about {charge_tax}.",
+        f"Check the prior years first: {lab}'s excess is only real if the earlier years' pension "
+        "totals are right. A missing figure in one of their Planners understates carry-forward "
+        "and invents a charge.",
+        f"Over £2,000 the scheme can pay it from your pot (Scheme Pays). Mandatory Scheme Pays "
+        f"also needs the input to that single scheme to have exceeded the standard "
+        f"£{rules['aa']:,} allowance — a tapered allowance on its own doesn't qualify — and the "
+        f"election for {lab} has to be in by 31 July {sel_year + 2}; some schemes offer it "
+        "voluntarily on their own terms.",
+    ]
+    # Carry-forward only reaches three years back, so whatever is still unused in
+    # sel_year - 3 dies with the selected year: gone if the year has closed,
+    # about to go if it hasn't.
+    expired_lost = (
+        f"{_gbp(res['expired'])} of unused {tax_years.label(sel_year - 3)} allowance "
+        f"expired on {_year_end_str(sel_year)} — carry-forward only reaches three years back"
+        if res["expired"] > 0
+        else None
+    )
+    expiring_soon = (
+        f"{_gbp(res['expired'])} of {tax_years.label(sel_year - 3)} carry-forward expires on "
+        f"{_year_end_str(sel_year)} — {lab} is the last year it can be used"
+        if res["expired"] > 0
+        else None
+    )
 
     if today > tax_years.tax_year_end(sel_year):
         if res["charge"] > 0:
+            note = (
+                f"{_gbp(res['charge'])} of {lab} pension input had no allowance left to cover "
+                f"it — an annual allowance charge of about {charge_tax} is due"
+            )
             return _tip(
                 "pension_headroom",
                 f"{lab}: annual allowance charge on {_gbp(res['charge'])}",
@@ -231,10 +313,19 @@ def pension_headroom(ctx):
                 confidence="high",
                 detail=detail,
                 warnings=warnings,
+                status=LOST,
+                status_note=note + (f". Separately, {expired_lost}" if expired_lost else ""),
+                how_to_execute=settle_steps,
             )
         return _tip(
             "pension_headroom",
-            f"{lab}: no annual allowance charge; {_gbp(res['carry_next_total'])} carries into {nxt}",
+            (
+                f"{lab}: {_gbp(res['expired'])} of {tax_years.label(sel_year - 3)} allowance "
+                "expired unused"
+                if expired_lost
+                else f"{lab}: no annual allowance charge; "
+                f"{_gbp(res['carry_next_total'])} carries into {nxt}"
+            ),
             f"Nothing to declare for {lab}: pension input {_gbp(s['pension_input'])} was within "
             f"the {_gbp(s['allowance'])} allowance plus carry-forward (headroom that existed: "
             f"{_gbp(res['headroom'])}). Unused allowance available in {nxt}: {carry_list}."
@@ -244,6 +335,8 @@ def pension_headroom(ctx):
             confidence="high",
             detail=detail,
             warnings=warnings,
+            status=LOST if expired_lost else None,
+            status_note=expired_lost,
         )
 
     if res["charge"] > 0:
@@ -258,6 +351,17 @@ def pension_headroom(ctx):
             deadline=tax_years.tax_year_end(sel_year).isoformat(),
             detail=detail,
             warnings=warnings,
+            status=EXPIRING,
+            status_note=(
+                f"{_gbp(res['charge'])} is over the allowance: unless contributions are cut "
+                f"before {_year_end_str(sel_year)}, a charge of about {charge_tax} follows"
+            ),
+            how_to_execute=[
+                f"Stop what you still control before {_year_end_str(sel_year)}: pause or reduce "
+                "the AVC/sacrifice rate with payroll, and don't make further personal payments "
+                "this year. Employer contributions count on the date they're paid.",
+            ]
+            + settle_steps,
         )
 
     headroom = res["headroom"]
@@ -267,9 +371,10 @@ def pension_headroom(ctx):
     # for anyone); the rest of the headroom can only be used by an employer.
     earnings = max(money(inputs.get("employment_income") or 0), money(3600))
     suggested = min(headroom, earnings)
+    net = money(suggested * Decimal("0.8"))
     what = (
-        f"Contribute up to {_gbp(suggested)} gross ({_gbp(money(suggested * Decimal('0.8')))} net "
-        f"— HMRC adds 25%) to a relief-at-source SIPP before 5 April {sel_year + 1}."
+        f"Pay up to {_gbp(suggested)} gross ({_gbp(net)} net — HMRC adds 25%) before 5 April "
+        f"{sel_year + 1}: an AVC into your workplace scheme, or a relief-at-source SIPP."
     )
     if suggested < headroom:
         what += (
@@ -288,6 +393,54 @@ def pension_headroom(ctx):
             f" {_gbp(res['unverified_total'])} of this relies on unverified prior years — see the "
             "warnings."
         )
+    # Carry-forward isn't claimed anywhere — it is simply what a contribution big
+    # enough to exhaust this year's own allowance falls back on. The steps say how
+    # that contribution is actually made: an AVC through the scheme, or personally.
+    avc_sacrifice = (
+        "Paid by salary sacrifice it lands as an employer contribution: no relevant-earnings "
+        "cap and it saves NI on the sacrificed pay"
+    )
+    if s["tapered"]:
+        avc_sacrifice += (
+            " — but pay sacrificed under an arrangement made after 8 Jul 2015 is added back to "
+            "threshold income, so sacrifice alone won't switch your taper off"
+        )
+    order = (
+        f"Use this year first: the {_gbp(s['allowance'])} {lab} allowance is consumed before any "
+        f"carry-forward, and {_gbp(s['pension_input'])} of it has gone in so far. Only what you "
+        f"pay above that reaches the {_gbp(res['carry_total'])} carried forward from earlier "
+        "years — carry-forward can't be claimed on its own."
+        if res["carry_total"] > 0
+        else f"This is all {lab}'s own allowance: {_gbp(s['allowance'])} less the "
+        f"{_gbp(s['pension_input'])} already paid in, with nothing carried forward from earlier "
+        "years to add to it. What you leave unused isn't lost on 5 April — it carries forward "
+        "three years, behind each of those years' own allowance."
+    )
+    personal = (
+        f"Or pay it yourself, into a SIPP or a standalone AVC contract: {_gbp(net)} leaves your "
+        "account, the provider adds 25%, and the rest of the relief is claimed on your return. "
+        "Unlike sacrifice, this one does reduce threshold income."
+    )
+    steps = [
+        order,
+        "AVC through the workplace scheme: ask payroll or the provider for a one-off or "
+        "increased additional voluntary contribution — most schemes take a lump sum as well as "
+        f"a monthly rate. {avc_sacrifice}.",
+        personal,
+    ]
+    if suggested < headroom:
+        steps.append(
+            f"Personal payments only get relief up to your relevant UK earnings "
+            f"({_gbp(earnings)}), which leaves {_gbp(headroom - suggested)} of the headroom out "
+            "of your own reach — only an employer contribution can use that part, so it has to "
+            "go through the scheme."
+        )
+    steps += [
+        f"Money has to reach the provider by 5 Apr {sel_year + 1}, not merely be instructed: "
+        "providers cut off days to weeks earlier, and a payroll AVC needs to make the March run.",
+        f"Then enter what you actually paid in the {lab} Planner — next year's carry-forward is "
+        "computed from it.",
+    ]
     return _tip(
         "pension_headroom",
         f"{_gbp(headroom)} of pension annual allowance unused",
@@ -297,32 +450,87 @@ def pension_headroom(ctx):
         deadline=tax_years.tax_year_end(sel_year).isoformat(),
         detail=detail,
         warnings=warnings,
+        status=EXPIRING if expiring_soon else None,
+        status_note=expiring_soon,
+        how_to_execute=steps,
     )
 
 
 def sixty_percent_trap(ctx):
-    y, profile = ctx["year"], ctx["profile"]
+    y, profile, ty = ctx["year"], ctx["profile"], ctx["tax_year"]
     ani = profile["income"]["adjusted_net_income"]
     if not (y["pa_taper_start"] < ani <= y["additional_threshold"]):
         return None
     excess = ani - y["pa_taper_start"]
-    return _tip(
-        "sixty_trap",
-        f"You're £{excess:,.0f} into the 60% trap",
-        f"A gross pension contribution (or Gift Aid) of £{excess:,.0f} brings "
-        f"adjusted net income back to £{y['pa_taper_start']:,.0f} and restores "
-        "your full personal allowance.",
+    lab = tax_years.label(ty)
+    pa_lost = min(excess / 2, y["personal_allowance"])
+    extra_tax = pa_lost * y["income_rates"]["higher"]
+    why = (
         "Between £100,000 and £125,140 each £2 of income removes £1 of personal "
         "allowance, so the effective tax rate on this slice is ~60%. Relief on a "
-        "contribution in this zone is correspondingly ~60%, not 40%.",
-        excess * 0.60,
-        deadline=tax_years.tax_year_end(ctx["tax_year"]).isoformat(),
+        "contribution in this zone is correspondingly ~60%, not 40%. A contribution "
+        "only counts for the year it is paid in — the one exception is Gift Aid, "
+        "which can be carried back to the previous year by electing on that year's "
+        "return (ITA 2007 s426), before the return is filed and by 31 January."
+    )
+    if not _year_closed(ctx):
+        status = _annual_status(ctx)
+        return _tip(
+            "sixty_trap",
+            f"You're £{excess:,.0f} into the 60% trap",
+            f"A gross pension contribution (or Gift Aid) of £{excess:,.0f} brings "
+            f"adjusted net income back to £{y['pa_taper_start']:,.0f} and restores "
+            "your full personal allowance.",
+            why,
+            excess * 0.60,
+            deadline=tax_years.tax_year_end(ty).isoformat(),
+            confidence="high",
+            status=status,
+            status_note=(
+                f"£{pa_lost:,.0f} of personal allowance (~£{extra_tax:,.0f} of tax) goes for "
+                f"good unless adjusted net income comes down by {_year_end_str(ty)}"
+                if status == EXPIRING
+                else None
+            ),
+        )
+
+    filing = tax_years.filing_deadline(ty)
+    lost_note = (
+        f"£{pa_lost:,.0f} of the {lab} personal allowance was tapered away — about "
+        f"£{extra_tax:,.0f} of extra tax"
+    )
+    if _today(ctx) <= filing:
+        return _tip(
+            "sixty_trap",
+            f"{lab}: £{excess:,.0f} into the 60% trap — only Gift Aid can still undo it",
+            f"The pension route closed on {_year_end_str(ty)}. A Gift Aid donation made now "
+            f"can still be carried back to {lab} by electing on that year's return — the "
+            f"election has to be on the return itself, made before you file it and by "
+            f"{filing:%-d %b %Y} — which would restore up to £{pa_lost:,.0f} of "
+            "personal allowance. Otherwise the allowance is gone.",
+            why,
+            None,
+            deadline=filing.isoformat(),
+            confidence="medium",
+            status=EXPIRING,
+            status_note=lost_note + f"; the Gift Aid carry-back election closes {filing:%-d %b %Y}",
+        )
+    return _tip(
+        "sixty_trap",
+        f"{lab}: £{pa_lost:,.0f} of personal allowance lost to the 60% trap",
+        f"Nothing can be done for {lab} — the year is closed and the {filing:%-d %b %Y} "
+        "deadline for a Gift Aid carry-back election has passed. Watch adjusted net income "
+        "in the current year: the same £{:,.0f} would be relieved at ~60%.".format(excess),
+        why,
+        None,
         confidence="high",
+        status=LOST,
+        status_note=lost_note,
     )
 
 
 def cgt_harvest(ctx):
-    y, invest, bundle = ctx["year"], ctx["invest"], ctx["bundle"]
+    y, invest, bundle, ty = ctx["year"], ctx["invest"], ctx["bundle"], ctx["tax_year"]
     total_gain = float(invest.get("total_gain") or 0)
     unused = y["cgt_allowance"] - max(0.0, total_gain)
     if unused < 200:
@@ -331,6 +539,30 @@ def cgt_harvest(ctx):
     if bundle:
         holdings = [p["symbol"] for p in bundle.get("portfolio_eoy", [])][:6]
     rate = y["cgt_rates_shares"]["higher"]
+    lab = tax_years.label(ty)
+    why = (
+        f"Gains within the £{y['cgt_allowance']:,.0f} annual exempt amount are "
+        "tax-free, and the allowance doesn't carry forward. Harvesting resets "
+        f"your cost base, saving up to {rate:.0%} on that gain later."
+    )
+    status = _annual_status(ctx)
+    if status == LOST:
+        return _tip(
+            "cgt_harvest",
+            f"{lab}: £{unused:,.0f} of the CGT allowance went unused",
+            f"Nothing left to do for {lab} — the annual exempt amount is use-it-or-lose-it, so "
+            f"the £{unused:,.0f} that wasn't realised is gone, and the cost base of everything "
+            "held stayed where it was. Open the current year's Planner and harvest that year's "
+            "allowance while it is still open.",
+            why,
+            None,
+            confidence="high",
+            status=LOST,
+            status_note=(
+                f"£{unused:,.0f} of the {lab} £{y['cgt_allowance']:,.0f} annual exempt amount "
+                f"expired unused on {_year_end_str(ty)} — it does not carry forward"
+            ),
+        )
     return _tip(
         "cgt_harvest",
         f"£{unused:,.0f} of CGT allowance unused",
@@ -338,32 +570,76 @@ def cgt_harvest(ctx):
         + (f" (current holdings: {', '.join(holdings)})" if holdings else "")
         + ". Note: buying the same security back within 30 days voids this "
         "(bed-and-breakfast rule) — rebuy inside an ISA/SIPP or buy something similar.",
-        f"Gains within the £{y['cgt_allowance']:,.0f} annual exempt amount are "
-        "tax-free, and the allowance doesn't carry forward. Harvesting resets "
-        f"your cost base, saving up to {rate:.0%} on that gain later.",
+        why,
         unused * rate,
-        deadline=tax_years.tax_year_end(ctx["tax_year"]).isoformat(),
+        deadline=tax_years.tax_year_end(ty).isoformat(),
+        status=status,
+        status_note=(
+            f"£{unused:,.0f} of the annual exempt amount (up to £{unused * rate:,.0f} of CGT) "
+            f"expires on {_year_end_str(ty)} and does not carry forward"
+            if status == EXPIRING
+            else None
+        ),
     )
 
 
 def bed_and_isa(ctx):
-    inputs, profile = ctx["inputs"], ctx["profile"]
+    inputs, profile, ty = ctx["inputs"], ctx["profile"], ctx["tax_year"]
     isa_used = float(inputs.get("isa_used") or 0)
-    remaining = ctx["year"]["isa_allowance"] - isa_used
+    allowance = ctx["year"]["isa_allowance"]
+    remaining = allowance - isa_used
     if remaining < 500:
         return None
     recurring = profile["tax"]["dividend_tax"] + profile["tax"]["savings_tax"]
+    lab = tax_years.label(ty)
+    why = (
+        "Inside an ISA, dividends, interest and gains are tax-free forever. "
+        f"You're currently paying ~£{recurring:,.0f}/year of tax on investment "
+        "income that could be sheltered (assumes similar income next year)."
+    )
+    # The figure is a manual input; if it was never filled in, "£20,000 unused"
+    # is an assumption, not a fact — say so before painting the card red.
+    warnings = (
+        []
+        if inputs.get("isa_used") is not None
+        else [f"'ISA allowance used this year' isn't filled in for {lab} — assumed £0 used"]
+    )
+    status = _annual_status(ctx)
+    if status == LOST:
+        return _tip(
+            "bed_isa",
+            f"{lab}: £{remaining:,.0f} of the ISA allowance went unused",
+            f"The {lab} allowance ended on {_year_end_str(ty)} and ISA allowances never carry "
+            f"forward, so that £{remaining:,.0f} of tax-free room is gone for good. This year's "
+            f"£{allowance:,.0f} is the one to fill — bed-and-ISA moves existing GIA holdings in "
+            "without needing new money.",
+            why,
+            None,
+            confidence="high",
+            warnings=warnings,
+            status=LOST,
+            status_note=(
+                f"£{remaining:,.0f} of the {lab} £{allowance:,.0f} ISA allowance expired unused "
+                f"on {_year_end_str(ty)} — ISA allowances do not carry forward"
+            ),
+        )
     return _tip(
         "bed_isa",
         f"£{remaining:,.0f} of ISA allowance unused",
         f"Move up to £{remaining:,.0f} of GIA holdings into your ISA "
         "(sell in GIA, rebuy in ISA — 'bed and ISA'; the 30-day rule doesn't "
         "apply across the ISA wrapper). Cash earning taxed interest can move too.",
-        "Inside an ISA, dividends, interest and gains are tax-free forever. "
-        f"You're currently paying ~£{recurring:,.0f}/year of tax on investment "
-        "income that could be sheltered (assumes similar income next year).",
+        why,
         recurring if recurring > 0 else None,
-        deadline=tax_years.tax_year_end(ctx["tax_year"]).isoformat(),
+        deadline=tax_years.tax_year_end(ty).isoformat(),
+        warnings=warnings,
+        status=status,
+        status_note=(
+            f"£{remaining:,.0f} of this year's £{allowance:,.0f} ISA allowance expires on "
+            f"{_year_end_str(ty)} and does not carry forward"
+            if status == EXPIRING
+            else None
+        ),
     )
 
 
@@ -435,11 +711,17 @@ def withholding_check(ctx):
         "withholding",
         f"US dividends taxed above the 15% treaty rate ({', '.join(sorted(flagged))})",
         "Check your W-8BEN with the broker — it expires every 3 years; without a "
-        "valid one, US withholding is 30% instead of the treaty 15%.",
+        "valid one, US withholding is 30% instead of the treaty 15%. Filing a new one "
+        "fixes future dividends, not the ones already paid.",
         "The UK–US treaty caps withholding at 15% and only that 15% is creditable "
         "against UK tax — the extra 15% is simply lost.",
         None,
         confidence="high",
+        status=LOST,
+        status_note=(
+            "the withholding above the 15% treaty rate can't be credited against UK tax — "
+            "only the IRS could refund it"
+        ),
     )
 
 
@@ -473,11 +755,18 @@ TIPS = [
 ]
 
 
+# Deadlines first: something still saveable outranks something already gone,
+# and both outrank an ordinary opportunity ranked by its size.
+_STATUS_ORDER = {EXPIRING: 0, LOST: 1}
+
+
 def build_tips(ctx) -> list[dict]:
     out = []
     for fn in TIPS:
         tip = fn(ctx)
         if tip:
             out.append(tip)
-    out.sort(key=lambda t: -(t["estimated_win_gbp"] or 0))
+    out.sort(
+        key=lambda t: (_STATUS_ORDER.get(t["status"], 2), -(t["estimated_win_gbp"] or 0)),
+    )
     return out

@@ -633,6 +633,35 @@ select:focus {
   margin: 10px 0 0;
 }
 
+/* Use-it-or-lose-it: red once the benefit is gone, orange while it still can be
+   taken. The stripe is what carries down a long list of tips. */
+.tip-card.tip-lost {
+  border-left: 5px solid var(--bad);
+}
+
+.tip-card.tip-expiring {
+  border-left: 5px solid var(--amber);
+}
+
+.tip-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tip-status {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tip-status.lost {
+  color: var(--bad);
+}
+
+.tip-status.expiring {
+  color: var(--amber);
+}
+
 .tip-warnings {
   margin: 0 0 8px;
   padding-left: 18px;
@@ -642,6 +671,22 @@ select:focus {
 
 .tip-warnings li + li {
   margin-top: 3px;
+}
+
+.tip-steps-head {
+  margin: 14px 0 4px;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+
+.tip-steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.tip-steps li + li {
+  margin-top: 6px;
 }
 
 .tip-detail {

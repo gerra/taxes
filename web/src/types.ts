@@ -353,6 +353,11 @@ export interface Tip {
   detail: string | null
   // Gaps in the inputs the figure relies on (e.g. a prior year with no income).
   warnings: string[]
+  // Ordered, concrete steps for claiming the tip; shown when the card is open.
+  how_to_execute: string[]
+  // A use-it-or-lose-it benefit already gone (red) or about to go (orange).
+  status: 'lost' | 'expiring' | null
+  status_note: string | null
 }
 
 export interface PlannerData {

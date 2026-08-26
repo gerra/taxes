@@ -10,7 +10,7 @@ import type {
   Report,
   TaxDue,
 } from '../types'
-import { gbp, num, pct, shortDate } from '../utils/format'
+import { currentTaxYear, gbp, num, pct, shortDate, taxYearLabel } from '../utils/format'
 
 const RULE_EXPLAIN: Record<string, string> = {
   SAME_DAY:
@@ -301,6 +301,13 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
   const { view, bundle } = report
   return (
     <div>
+      {view.tax_year === currentTaxYear() && (
+        <div className="banner info">
+          {taxYearLabel(view.tax_year)} is still running — this is a snapshot of what has happened
+          so far, not a return. The Planner tab turns it into the moves still open to you before 5
+          April.
+        </div>
+      )}
       {report.provisional && (
         <div className="banner warn">
           Documents are incomplete ({report.coverage_overall}) — these figures are provisional. Fill

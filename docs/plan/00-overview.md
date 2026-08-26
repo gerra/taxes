@@ -45,6 +45,12 @@ nginx :443 taxes.gerra.sh ──► gunicorn 127.0.0.1:5002 ──► Flask
    (files, db)     calc_runs, planner_inputs
 ```
 
+Tax years: the picker offers every year `core/tax_years.py` has constants for, up to
+and including the one now running (labelled "in progress"). The app opens on the last
+*finished* year — that's the one being filed — while the running year is where the
+Planner still has something to change; coverage already clamps its required period to
+today, and its report is a year-to-date snapshot, not a return.
+
 Data flow: **Documents** owns what the user has uploaded and whether it covers the
 needed period → **Engine** consumes a document set + tax year and produces a
 `ReportBundle` (JSON of every figure + calculation log + rendered PDF) → **Report**

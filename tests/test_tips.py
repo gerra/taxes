@@ -95,3 +95,74 @@ def test_withholding_flag():
     }
     tip = _get(build_tips(_ctx({"employment_income": 50000}, {}, bundle)), "withholding")
     assert tip is not None and "ABC" in tip["title"] and "OK" not in tip["title"]
+
+
+# ── Lost / expiring benefits ──────────────────────────────────────────────────
+#
+# An allowance that doesn't carry forward is "expiring" (orange) while the year
+# is open and 5 April is near, and "lost" (red) once the year has closed.
+
+CLOSED = date(2026, 8, 27)  # 2025/26 is over
+NEAR_YEAR_END = date(2026, 3, 1)  # 35 days left in 2025/26
+MID_YEAR = date(2026, 1, 15)  # 80 days left — nothing urgent yet
+
+
+def _statuses(inputs, invest=None, today=MID_YEAR, tax_year=2025):
+    tips = build_tips(_ctx(inputs, invest, tax_year=tax_year, today=today))
+    return {t["id"]: t for t in tips}
+
+
+def test_annual_allowances_are_quiet_mid_year():
+    tips = _statuses({"employment_income": 60000, "isa_used": 0}, {"total_gain": 500})
+    assert tips["cgt_harvest"]["status"] is None
+    assert tips["bed_isa"]["status"] is None
+
+
+def test_annual_allowances_expire_as_5_april_approaches():
+    inputs = {"employment_income": 60000, "isa_used": 0}
+    tips = _statuses(inputs, {"total_gain": 500}, NEAR_YEAR_END)
+    assert tips["cgt_harvest"]["status"] == "expiring"
+    assert "expires on 5 Apr 2026" in tips["cgt_harvest"]["status_note"]
+    assert tips["cgt_harvest"]["estimated_win_gbp"] is not None  # still actionable
+    assert tips["bed_isa"]["status"] == "expiring"
+    assert "Move up to £20,000" in tips["bed_isa"]["what_to_do"]
+
+
+def test_closed_year_allowances_are_lost():
+    tips = _statuses({"employment_income": 60000, "isa_used": 5000}, {"total_gain": 500}, CLOSED)
+    cgt = tips["cgt_harvest"]
+    assert cgt["status"] == "lost" and cgt["estimated_win_gbp"] is None
+    assert "expired unused on 5 Apr 2026" in cgt["status_note"]
+    assert "before 5 April" not in cgt["what_to_do"]
+    isa = tips["bed_isa"]
+    assert isa["status"] == "lost" and isa["estimated_win_gbp"] is None
+    assert "£15,000 of the 2025/26 £20,000 ISA allowance" in isa["status_note"]
+
+
+def test_unfilled_isa_input_is_warned_about_before_the_card_goes_red():
+    tips = _statuses({"employment_income": 60000}, today=CLOSED)
+    assert tips["bed_isa"]["status"] == "lost"
+    assert any("isn't filled in" in w for w in tips["bed_isa"]["warnings"])
+
+
+def test_sixty_trap_closed_year_still_allows_gift_aid_carry_back():
+    # 2025/26 closed on 5 Apr 2026; its return is due 31 Jan 2027, so an election
+    # to carry a donation back is still open.
+    tip = _statuses({"employment_income": 120000}, today=CLOSED)["sixty_trap"]
+    assert tip["status"] == "expiring"
+    assert "Gift Aid" in tip["what_to_do"] and "31 Jan 2027" in tip["status_note"]
+    assert tip["estimated_win_gbp"] is None
+
+
+def test_sixty_trap_is_lost_once_the_return_deadline_passes():
+    tip = _statuses({"employment_income": 120000}, today=date(2027, 2, 1))["sixty_trap"]
+    assert tip["status"] == "lost"
+    assert "£10,000 of the 2025/26 personal allowance was tapered away" in tip["status_note"]
+
+
+def test_expiring_and_lost_sort_above_plain_opportunities():
+    tips = build_tips(
+        _ctx({"employment_income": 120000, "isa_used": 0}, {"total_gain": 500}, today=CLOSED)
+    )
+    order = [t["status"] for t in tips]
+    assert order == sorted(order, key=lambda s: {"expiring": 0, "lost": 1}.get(s, 2))

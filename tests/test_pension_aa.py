@@ -255,6 +255,48 @@ def test_tip_open_year_suggests_capped_contribution():
     assert any("2022/23" in w for w in tip["warnings"])
 
 
+def test_tip_open_year_spells_out_the_avc_route():
+    tip = _pension_tip(build_tips(_ctx(FIXTURE_INPUTS_2025, 2025, date(2026, 1, 15), PRIOR_YEARS)))
+    assert "AVC into your workplace scheme" in tip["what_to_do"]
+    steps = tip["how_to_execute"]
+    # Carry-forward is only reached once the year's own allowance is exhausted.
+    assert steps[0].startswith("Use this year first")
+    assert "carry-forward can't be claimed on its own" in steps[0]
+    assert "additional voluntary contribution" in steps[1]
+    assert "salary sacrifice" in steps[1] and "saves NI" in steps[1]
+    assert "standalone AVC contract" in steps[2]
+    assert any("reach the provider by 5 Apr 2026" in x for x in steps)
+
+
+def test_tip_steps_drop_the_carry_forward_ordering_when_there_is_none():
+    inputs = {"employment_income": 80000, "pension_employer": 10000}
+    steps = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 1, 15))))["how_to_execute"]
+    assert steps[0].startswith("This is all 2025/26's own allowance")
+    # Unused annual allowance is not use-it-or-lose-it — it carries three years.
+    assert "carries forward three years" in steps[0]
+
+
+def test_tip_steps_send_headroom_above_earnings_through_the_employer():
+    inputs = {"employment_income": 30000, "pension_prior_1": 0.01, "pension_prior_2": 0.01}
+    steps = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 1, 15))))["how_to_execute"]
+    assert any("only an employer contribution can use that part" in x for x in steps)
+
+
+def test_tip_charge_steps_cover_sa101_and_scheme_pays():
+    inputs = {"employment_income": 150000, "pension_employer": 75000}
+    steps = _pension_tip(build_tips(_ctx(inputs, 2024, date(2025, 6, 1))))["how_to_execute"]
+    assert "SA101" in steps[0] and "box 10" in steps[0]
+    # Mandatory Scheme Pays: election by 31 July of the year after the tax year.
+    assert "31 July 2026" in steps[2] and "standard £60,000 allowance" in steps[2]
+
+
+def test_tip_open_year_charge_says_stop_the_contributions_first():
+    inputs = {"employment_income": 150000, "pension_employer": 75000}
+    steps = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 1, 15))))["how_to_execute"]
+    assert steps[0].startswith("Stop what you still control before 5 Apr 2026")
+    assert "SA101" in steps[1]
+
+
 def test_tip_open_year_caps_at_relevant_earnings():
     inputs = {"employment_income": 30000, "pension_prior_1": 0.01, "pension_prior_2": 0.01}
     tip = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 1, 15))))
@@ -265,10 +307,26 @@ def test_tip_open_year_caps_at_relevant_earnings():
 def test_tip_closed_year_reports_no_charge_and_carry_forward():
     tip = _pension_tip(build_tips(_ctx(FIXTURE_INPUTS_2025, 2025, date(2026, 8, 26), PRIOR_YEARS)))
     assert "before 5 April" not in tip["what_to_do"]
-    assert tip["title"] == "2025/26: no annual allowance charge; £50,796.48 carries into 2026/27"
+    # The oldest year's remainder aged out with the year, so that leads the title.
+    assert tip["title"] == "2025/26: £22,928.01 of 2022/23 allowance expired unused"
     assert "2023/24 £50,796.48" in tip["what_to_do"]
     assert "£22,928.01" in tip["what_to_do"] and "expired" in tip["what_to_do"]
     assert tip["estimated_win_gbp"] is None and tip["deadline"] is None
+    assert tip["status"] == "lost"
+    assert "£22,928.01 of unused 2022/23 allowance expired on 5 Apr 2026" in tip["status_note"]
+
+
+def test_tip_closed_year_without_expiry_has_no_status():
+    inputs = {"employment_income": 80000, "pension_employer": 60000, "pension_prior_3": 40000}
+    tip = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 8, 26))))
+    assert tip["title"].startswith("2025/26: no annual allowance charge")
+    assert tip["status"] is None and tip["status_note"] is None
+
+
+def test_tip_open_year_flags_carry_forward_about_to_expire():
+    tip = _pension_tip(build_tips(_ctx(FIXTURE_INPUTS_2025, 2025, date(2026, 1, 15), PRIOR_YEARS)))
+    assert tip["status"] == "expiring"
+    assert "£22,928.01 of 2022/23 carry-forward expires on 5 Apr 2026" in tip["status_note"]
 
 
 def test_tip_closed_year_reports_charge():
@@ -277,6 +335,8 @@ def test_tip_closed_year_reports_charge():
     assert tip["title"] == "2024/25: annual allowance charge on £15,000.00"
     assert "SA101" in tip["what_to_do"]
     assert tip["deadline"] == "2026-01-31"
+    assert tip["status"] == "lost"
+    assert "charge of about £6,750.00 is due" in tip["status_note"]
 
 
 def test_tip_open_year_excess_warns_of_charge():
@@ -284,6 +344,8 @@ def test_tip_open_year_excess_warns_of_charge():
     tip = _pension_tip(build_tips(_ctx(inputs, 2025, date(2026, 1, 15))))
     assert tip["title"] == "Pension input exceeds your allowance by £15,000.00"
     assert tip["estimated_win_gbp"] is None
+    assert tip["status"] == "expiring"
+    assert "unless contributions are cut before 5 Apr 2026" in tip["status_note"]
 
 
 def test_tip_prefers_prior_year_planner_when_no_explicit_total():
