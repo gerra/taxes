@@ -27,10 +27,19 @@ _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d %b %Y", "%d.%m.%Y", "%m
 
 
 def fork_version() -> str:
+    """Identify the installed cgt-calc fork for cache keys. The package version is
+    a constant, so prefer the git commit recorded at install time."""
     try:
-        from importlib.metadata import version
+        import json
+        from importlib.metadata import distribution
 
-        return version("cgt-calc")
+        dist = distribution("cgt-calc")
+        direct = dist.read_text("direct_url.json")
+        if direct:
+            commit = json.loads(direct).get("vcs_info", {}).get("commit_id")
+            if commit:
+                return commit
+        return dist.version
     except Exception:  # pragma: no cover
         return "unknown"
 

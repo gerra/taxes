@@ -105,3 +105,10 @@ def test_merge_drops_footer_rows(tmp_path):
     rows = _read(out)
     assert len(rows) == 2
     assert rows[1] == ["01/02/2024", "Buy", "X"]
+
+
+def test_fork_version_is_commit_or_version():
+    from engine.runner import fork_version
+
+    v = fork_version()
+    assert v and v != "unknown"
