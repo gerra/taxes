@@ -308,10 +308,11 @@ def _tbill_notices(exempt: dict | None, tax_year: int | None) -> list[dict]:
                 "early uses its sale proceeds instead."
             ),
             "action": (
-                "Check the figures against your Freetrade statements, then enter the total in "
-                "the SA101 Additional information pages, 'deeply discounted securities' gross "
-                "amount box (the report's SA101 row). It is not covered by the personal "
-                "savings allowance rules for interest — verify on the SA101 notes."
+                "Check the figures against your Freetrade statements — the date in a bill's "
+                "name can run a few days after the real redemption, so a bill maturing around "
+                "5 April may belong to the other tax year. Then enter the total in the SA101 "
+                "Additional information pages, 'deeply discounted securities' gross amount box "
+                "(the report's SA101 row); verify the box on the SA101 notes."
             ),
             "count": len(tbills),
             "raw": [],
