@@ -88,3 +88,20 @@ def test_convert_bank_csv(tmp_path):
         ["2025-05-31", "INTEREST", "", "1", "1.23", "0", "GBP"],
         ["2025-06-30", "INTEREST", "", "1", "1024.50", "0", "GBP"],
     ]
+
+
+def test_merge_drops_footer_rows(tmp_path):
+    a = tmp_path / "a.csv"
+    _write(
+        a,
+        [
+            ["Date", "Action", "Symbol"],
+            ["01/02/2024", "Buy", "X"],
+            ["Transactions Total", "", ""],
+        ],
+    )
+    out = tmp_path / "out.csv"
+    merge_csv_files([str(a)], str(out), ("Date", "Action"))
+    rows = _read(out)
+    assert len(rows) == 2
+    assert rows[1] == ["01/02/2024", "Buy", "X"]

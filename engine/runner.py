@@ -132,13 +132,18 @@ def _find_header(rows: list[list[str]], probes: tuple[str, ...]) -> int:
     return 0
 
 
+# Broker export footer rows that aren't transactions (e.g. Schwab's summary line)
+_FOOTER_LABELS = {"transactions total", "total"}
+
+
 def merge_csv_files(
     src_paths: list[str], out_path: str, probes: tuple[str, ...], pair_rows: bool = False
 ) -> None:
     """Merge export chunks into one CSV: header from the first file, data rows
     deduplicated across files but not within a file (a row repeated N times in
     one file is a real repeated transaction — keep max count seen in any one
-    file). pair_rows treats consecutive row pairs as one record (Schwab awards)."""
+    file). pair_rows treats consecutive row pairs as one record (Schwab awards).
+    Footer summary rows (e.g. Schwab's "Transactions Total") are dropped."""
     header: list[str] | None = None
     order: list[tuple] = []
     counts: dict[tuple, int] = {}
@@ -149,7 +154,7 @@ def merge_csv_files(
         h_idx = _find_header(rows, probes)
         if header is None:
             header = rows[h_idx]
-        data = rows[h_idx + 1 :]
+        data = [r for r in rows[h_idx + 1 :] if r[0].strip().lower() not in _FOOTER_LABELS]
         if pair_rows:
             units = [tuple(map(tuple, data[i : i + 2])) for i in range(0, len(data) - 1, 2)]
         else:
@@ -349,6 +354,24 @@ def run_calculation(user_id: int, tax_year: int, force: bool = False) -> dict:
         }
         repo.set_calc_run_status(run["id"], "running")
         result = _run_worker(job, work_dir)
+        if (
+            not result.get("ok")
+            and "balance" in str(result.get("error", {}).get("message", "")).lower()
+        ):
+            # Cash-balance reconciliation failed — usually deposits/withdrawals
+            # missing from partial exports (Freetrade windows). Gains/dividends
+            # are unaffected if all trades are present, so retry without it and
+            # surface a warning instead of failing the run.
+            job["balance_check"] = False
+            retry = _run_worker(job, work_dir)
+            if retry.get("ok"):
+                set_warnings.append(
+                    "Cash balance didn't reconcile — some deposits/withdrawals are "
+                    "missing from your documents. The calculation ran without the "
+                    "balance check; figures are correct as long as every buy/sell/"
+                    "dividend row is present."
+                )
+                result = retry
         if result.get("ok"):
             bundle = result["bundle"]
             bundle["warnings"] = set_warnings + bundle.get("warnings", [])
