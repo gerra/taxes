@@ -73,28 +73,39 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
   const [message, setMessage] = useState('')
   const [mappingNeeded, setMappingNeeded] = useState<MappingNeeded | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
-  const pendingFile = useRef<File | null>(null)
+  const pendingFiles = useRef<File[]>([])
   const status = STATUS[coverage.status]
 
-  const upload = async (file: File) => {
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0) return
     setBusy(true)
     setMessage('')
-    const form = new FormData()
-    form.append('file', file)
-    try {
-      await api.post(`/api/accounts/${account.id}/documents`, form)
-      setMessage(`Uploaded ${file.name}`)
-      onChange()
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && (e.body as MappingNeeded)?.needs_mapping) {
-        pendingFile.current = file
-        setMappingNeeded(e.body as MappingNeeded)
-      } else {
-        setMessage(String(e))
+    const uploaded: string[] = []
+    const failed: string[] = []
+    const needMapping: File[] = []
+    for (const file of files) {
+      const form = new FormData()
+      form.append('file', file)
+      try {
+        await api.post(`/api/accounts/${account.id}/documents`, form)
+        uploaded.push(file.name)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409 && (e.body as MappingNeeded)?.needs_mapping) {
+          needMapping.push(file)
+          setMappingNeeded(e.body as MappingNeeded)
+        } else {
+          failed.push(`${file.name}: ${String(e)}`)
+        }
       }
-    } finally {
-      setBusy(false)
     }
+    if (needMapping.length > 0) pendingFiles.current = needMapping
+    const parts: string[] = []
+    if (uploaded.length === 1) parts.push(`Uploaded ${uploaded[0]}`)
+    else if (uploaded.length > 1) parts.push(`Uploaded ${uploaded.length} files`)
+    parts.push(...failed)
+    setMessage(parts.join(' · '))
+    if (uploaded.length > 0) onChange()
+    setBusy(false)
   }
 
   const remove = async (docId: number) => {
@@ -158,15 +169,15 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
         <input
           ref={fileRef}
           type="file"
+          multiple
           hidden
           onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) upload(f)
+            uploadFiles(Array.from(e.target.files ?? []))
             e.target.value = ''
           }}
         />
         <button className="btn" disabled={busy} onClick={() => fileRef.current?.click()}>
-          {busy ? 'Validating…' : 'Upload export'}
+          {busy ? 'Validating…' : 'Upload exports'}
         </button>
         {message && <span className="muted small">{message}</span>}
       </div>
@@ -177,11 +188,14 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
           preview={mappingNeeded}
           onDone={() => {
             setMappingNeeded(null)
-            const f = pendingFile.current
-            pendingFile.current = null
-            if (f) upload(f)
+            const retry = pendingFiles.current
+            pendingFiles.current = []
+            uploadFiles(retry)
           }}
-          onCancel={() => setMappingNeeded(null)}
+          onCancel={() => {
+            setMappingNeeded(null)
+            pendingFiles.current = []
+          }}
         />
       )}
     </section>

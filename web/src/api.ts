@@ -5,12 +5,14 @@ export class ApiError extends Error {
   body: unknown
 
   constructor(status: number, body: unknown) {
-    const message =
-      typeof body === 'object' && body !== null && 'error' in body
-        ? typeof (body as { error: unknown }).error === 'string'
-          ? ((body as { error: string }).error as string)
-          : JSON.stringify((body as { error: unknown }).error)
-        : `HTTP ${status}`
+    let message = `HTTP ${status}`
+    if (typeof body === 'object' && body !== null && 'error' in body) {
+      const err = (body as { error: unknown }).error
+      if (typeof err === 'string') message = err
+      else if (err && typeof err === 'object' && 'message' in err)
+        message = String((err as { message: unknown }).message)
+      else message = JSON.stringify(err)
+    }
     super(message)
     this.status = status
     this.body = body
