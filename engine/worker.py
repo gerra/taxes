@@ -342,6 +342,19 @@ def run_calculate(job: dict) -> dict:
     spin_off_handler = SpinOffHandler(args.spin_offs_file)
     spin_off_handler.cache.update(job.get("spin_offs", {}))
 
+    # An older fork (before --exempt-securities) still calculates; the
+    # exemption is simply off, and the report says so.
+    import inspect
+
+    extra: dict = {}
+    if "exempt_securities" in inspect.signature(CapitalGainsCalculator.__init__).parameters:
+        extra["exempt_securities"] = exempt_names
+    elif exempt_names:
+        handler.messages.append(
+            "The installed cgt-calc fork predates exempt-securities support, so "
+            f"{', '.join(exempt_names)} were charged like shares. Redeploy with the "
+            "current fork."
+        )
     calculator = CapitalGainsCalculator(
         args.year,
         currency_converter,
@@ -352,7 +365,7 @@ def run_calculate(job: dict) -> dict:
         args.interest_fund_tickers,
         balance_check=args.balance_check,
         calc_unrealized_gains=False,
-        exempt_securities=exempt_names,
+        **extra,
     )
     calculator.convert_to_hmrc_transactions(broker_transactions)
     report = calculator.calculate_capital_gain()

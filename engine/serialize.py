@@ -159,10 +159,17 @@ def serialize_report(report) -> dict:
             "uk_interest": _d(report.total_uk_interest),
             "foreign_interest": _d(report.total_foreign_interest),
             "interest_tax": _d(report.total_interest_tax),
-            "other_income": _d(report.total_other_income),
-            "other_income_tax": _d(report.total_other_income_tax),
-            "exempt_disposal_count": report.exempt_disposal_count(),
-            "exempt_disposal_proceeds": _d(report.exempt_disposal_proceeds()),
+            # getattr: an older fork has no other-income or exempt support.
+            "other_income": _d(getattr(report, "total_other_income", Decimal(0))),
+            "other_income_tax": _d(getattr(report, "total_other_income_tax", Decimal(0))),
+            "exempt_disposal_count": (
+                report.exempt_disposal_count() if hasattr(report, "exempt_disposal_count") else 0
+            ),
+            "exempt_disposal_proceeds": _d(
+                report.exempt_disposal_proceeds()
+                if hasattr(report, "exempt_disposal_proceeds")
+                else Decimal(0)
+            ),
             "eri_dividends": _d(report.total_eri_amount(is_interest=False)),
             "eri_interest": _d(report.total_eri_amount(is_interest=True)),
         },
