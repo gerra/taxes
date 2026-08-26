@@ -24,7 +24,20 @@ the web app. Everything downstream (report UI, planner) consumes this module's
   - `totals`: disposal_count, disposal_proceeds, allowable_costs, gain_before_losses,
     losses, gain_after_losses, annual_exempt_amount, taxable_gain.
   - `dividends`: per-event list + totals (gross, withheld, treaty relief, allowance,
-    taxable); `interest`: UK vs foreign, per (broker, month); `eri` events if any.
+    taxable); `interest`: UK vs foreign, per (broker, month); `interest_tax`; `eri` events
+    if any.
+  - `other_income`: per-payment rows `{date, source, amount_gbp, tax_gbp}` for income that is
+    neither interest nor dividends — REIT property income distributions (under the REIT's
+    ticker, grossed up, with the 20% withheld as `tax_gbp`) and share-lending fees (under
+    the broker) — from the fork's `OTHER_INCOME`/`OTHER_INCOME_TAX` actions; totals
+    `other_income`, `other_income_tax`.
+  - Exempt securities (TCGA 1992 s115): the worker recognises gilts and UK T-bills by name
+    + GB ISIN and merges the user's `exempt_securities` table (ticker/ISIN, API
+    `/api/exempt-securities`), passing them to the fork's `--exempt-securities`. Their
+    disposals appear in `disposals` with `exempt: true` and are excluded from every total
+    (`exempt_disposal_count`/`exempt_disposal_proceeds` say how many). `exempt` carries the
+    detected list, the accrued interest the engine noted on dirty-price gilt trades, and the
+    peak gilt nominal held for the Accrued Income Scheme £5,000 test (`ais_applies`).
   - `portfolio_eoy`: per-symbol quantity + pooled cost at 5 April.
   - `warnings[]`: balance-check failures, missing allowances, unknown spin-offs, etc.
 - Tables owned: `calc_runs` (inputs hash, status, bundle JSON, pdf path, log excerpt).

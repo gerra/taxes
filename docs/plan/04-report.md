@@ -33,7 +33,12 @@ constants file (allowances, rates, box numbers) shared with module 5.
      computation PDF must be attached, and (for 2024/25) the pre/post 30 Oct 2024
      gain split if HMRC's adjustment box applies.
    - **SA100**: untaxed UK interest; UK dividends (Freetrade GBP dividends);
-     small-amounts foreign dividend/interest boxes where eligible.
+     small-amounts foreign dividend/interest boxes where eligible; **other UK income**
+     box 17 (REIT PIDs gross + share-lending fees) with the REITs' 20% withholding in
+     box 19 and the description for box 21 in the explanation — shown only when non-zero.
+   - **Exempt disposals** (gilts, T-bills): summarised in a banner with an explanation and
+     badged in the disposals table; never in the SA108 boxes. An Accrued Income Scheme
+     notice flags gilt trades when more than £5,000 nominal was held (not computed).
    - **SA106**: foreign dividends (Schwab USD), foreign tax taken off (15% US
      withholding), foreign interest, and Foreign Tax Credit Relief.
    - **ERI** (if present): offshore-fund excess reported income per HS265.
