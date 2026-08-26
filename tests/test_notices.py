@@ -61,3 +61,54 @@ def test_unknown_message_preserved():
 def test_sorted_warnings_before_info():
     notices = build_notices([BNB_1, DISCREPANCY, TREATY_1])
     assert [n["kind"] for n in notices] == ["warning", "warning", "info"]
+
+
+def test_keys_are_stable_and_url_safe():
+    import re
+
+    for n in build_notices(
+        [DISCREPANCY, BNB_1, TREATY_1, "Cash balance didn't reconcile — x", "odd"]
+    ):
+        assert re.match(r"^[A-Za-z0-9_.\-]+$", n["key"]), n["key"]
+    [n] = build_notices([DISCREPANCY])
+    assert n["key"] == "amount_adjusted__META__2025-02-25"
+
+
+def test_resolution_verifies_sell_to_cover_arithmetic():
+    from core.notices import apply_resolutions
+
+    notices = build_notices([DISCREPANCY, BNB_1])
+    resolutions = {
+        "amount_adjusted__META__2025-02-25": {
+            "note": "RSU sell-to-cover",
+            "data": {"withholding": "10966.96"},
+            "evidence_name": "trade.pdf",
+            "created_at": "2026-08-26 10:00:00",
+        }
+    }
+    apply_resolutions(notices, resolutions)
+    # resolved notices sort last
+    assert notices[-1]["category"] == "amount_adjusted"
+    res = notices[-1]["resolution"]
+    assert res["verified"] is True
+    assert "$45,694.37 − $10,966.96 withholding = $34,727.41" in res["check"]
+    assert notices[0]["resolution"] is None
+
+
+def test_resolution_flags_mismatch():
+    from core.notices import apply_resolutions
+
+    notices = build_notices([DISCREPANCY])
+    apply_resolutions(
+        notices,
+        {
+            "amount_adjusted__META__2025-02-25": {
+                "note": "",
+                "data": {"withholding": "100"},
+                "evidence_name": None,
+                "created_at": "",
+            }
+        },
+    )
+    assert notices[0]["resolution"]["verified"] is False
+    assert "off by" in notices[0]["resolution"]["check"]

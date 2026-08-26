@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, g, jsonify
 
-from core import coverage, repo, report_view, tax_profile, tax_years
+from core import coverage, notices, repo, report_view, tax_profile, tax_years
 
 bp = Blueprint("report", __name__, url_prefix="/api/report")
 
@@ -26,6 +26,7 @@ def report(tax_year: int):
     bundle = json.loads(run["bundle"])
     profile = _profile_or_none(g.user_id, tax_year, bundle)
     view = report_view.build_view(bundle, tax_year, profile)
+    notices.apply_resolutions(view["notices"], repo.list_resolutions(g.user_id))
     checklist = coverage.checklist(g.user_id, tax_year)
     return jsonify(
         {

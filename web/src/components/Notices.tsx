@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { api } from '../api'
 import type { Notice } from '../types'
+import { shortDate } from '../utils/format'
 
 // Renders text with [[value]] tokens as highlighted pills.
 export function Hl({ text }: { text: string }) {
@@ -19,7 +21,9 @@ export function Hl({ text }: { text: string }) {
   )
 }
 
-const ICONS: Record<Notice['kind'], JSX.Element> = {
+type Tone = Notice['kind'] | 'resolved'
+
+const ICONS: Record<Tone, JSX.Element> = {
   info: (
     <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
       <circle cx="10" cy="10" r="9" fill="currentColor" opacity="0.15" />
@@ -47,6 +51,19 @@ const ICONS: Record<Notice['kind'], JSX.Element> = {
       <path d="M6.5 6.5l7 7M13.5 6.5l-7 7" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   ),
+  resolved: (
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <circle cx="10" cy="10" r="9" fill="currentColor" opacity="0.15" />
+      <path
+        d="M5.5 10.5l3 3 6-6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
 }
 
 const KIND_LABEL: Record<Notice['kind'], string> = {
@@ -55,40 +72,59 @@ const KIND_LABEL: Record<Notice['kind'], string> = {
   error: 'error',
 }
 
-export default function Notices({ notices }: { notices: Notice[] }) {
+export default function Notices({
+  notices,
+  onChange,
+}: {
+  notices: Notice[]
+  onChange?: () => void
+}) {
   if (notices.length === 0) return null
-  const counts = notices.reduce<Record<string, number>>((acc, n) => {
+  const open = notices.filter((n) => !n.resolution)
+  const counts = open.reduce<Record<string, number>>((acc, n) => {
     acc[n.kind] = (acc[n.kind] ?? 0) + 1
     return acc
   }, {})
-  const summary = (['error', 'warning', 'info'] as const)
+  const parts = (['error', 'warning', 'info'] as const)
     .filter((k) => counts[k])
     .map((k) => `${counts[k]} ${KIND_LABEL[k]}${counts[k] === 1 ? '' : 's'}`)
-    .join(' · ')
+  const resolvedCount = notices.length - open.length
+  if (resolvedCount) parts.push(`${resolvedCount} confirmed`)
 
   return (
     <section className="notices">
       <div className="notices-head">
         <h3>Things to know</h3>
-        <span className="muted small">{summary}</span>
+        <span className="muted small">{parts.join(' · ')}</span>
       </div>
-      {notices.map((n, i) => (
-        <NoticeCard key={i} notice={n} />
+      {notices.map((n) => (
+        <NoticeCard key={n.key} notice={n} onChange={onChange} />
       ))}
     </section>
   )
 }
 
-function NoticeCard({ notice }: { notice: Notice }) {
+function NoticeCard({ notice, onChange }: { notice: Notice; onChange?: () => void }) {
   const [open, setOpen] = useState(false)
-  const hasMore = Boolean(notice.why || notice.action || notice.raw.length)
+  const [resolving, setResolving] = useState(false)
+  const res = notice.resolution ?? null
+  const tone: Tone = res ? 'resolved' : notice.kind
+  const hasMore = Boolean(notice.why || notice.raw.length)
+
+  const remove = async () => {
+    if (!confirm('Remove this confirmation and its attached evidence?')) return
+    await api.del(`/api/notices/${notice.key}`)
+    onChange?.()
+  }
+
   return (
-    <div className={`notice notice-${notice.kind}`}>
-      <div className="notice-icon">{ICONS[notice.kind]}</div>
+    <div className={`notice notice-${tone}`}>
+      <div className="notice-icon">{ICONS[tone]}</div>
       <div className="notice-body">
         <div className="notice-title">
           <Hl text={notice.title} />
           {notice.count > 1 && <span className="notice-count">×{notice.count}</span>}
+          {res && <span className="badge ok">Confirmed</span>}
         </div>
         {notice.summary && (
           <div className="notice-summary">
@@ -104,16 +140,61 @@ function NoticeCard({ notice }: { notice: Notice }) {
             ))}
           </ul>
         )}
-        {notice.action && (
+        {!res && notice.action && (
           <div className="notice-action">
             <Hl text={notice.action} />
           </div>
         )}
-        {hasMore && (
-          <button className="link notice-more" onClick={() => setOpen(!open)}>
-            {open ? 'Less' : 'Why this matters'}
-          </button>
+
+        {res && (
+          <div className="notice-resolution">
+            {res.check && <div className={`check ${res.verified ? 'ok' : 'bad'}`}>{res.check}</div>}
+            {res.note && <div>{res.note}</div>}
+            <div className="meta">
+              <span>Confirmed {shortDate(res.created_at.slice(0, 10))}</span>
+              {res.evidence_name && (
+                <a href={`/api/notices/${notice.key}/evidence`} target="_blank" rel="noreferrer">
+                  📎 {res.evidence_name}
+                </a>
+              )}
+            </div>
+          </div>
         )}
+
+        <div className="notice-actions">
+          {!res && notice.kind !== 'info' && !resolving && onChange && (
+            <button className="link" onClick={() => setResolving(true)}>
+              Confirm with evidence
+            </button>
+          )}
+          {res && onChange && (
+            <>
+              <button className="link" onClick={() => setResolving(true)}>
+                Edit
+              </button>
+              <button className="link danger" onClick={remove}>
+                Remove confirmation
+              </button>
+            </>
+          )}
+          {hasMore && (
+            <button className="link notice-more" onClick={() => setOpen(!open)}>
+              {open ? 'Less' : 'Why this matters'}
+            </button>
+          )}
+        </div>
+
+        {resolving && (
+          <ResolveForm
+            notice={notice}
+            onDone={() => {
+              setResolving(false)
+              onChange?.()
+            }}
+            onCancel={() => setResolving(false)}
+          />
+        )}
+
         {open && (
           <div className="notice-details">
             {notice.why && <p>{notice.why}</p>}
@@ -127,6 +208,83 @@ function NoticeCard({ notice }: { notice: Notice }) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function ResolveForm({
+  notice,
+  onDone,
+  onCancel,
+}: {
+  notice: Notice
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const [note, setNote] = useState(notice.resolution?.note ?? '')
+  const [withholding, setWithholding] = useState(notice.resolution?.data?.withholding ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const isSellToCover = notice.category === 'amount_adjusted'
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    const form = new FormData()
+    form.append('note', note)
+    if (isSellToCover) form.append('withholding', withholding)
+    const file = fileRef.current?.files?.[0]
+    if (file) form.append('file', file)
+    try {
+      await api.put(`/api/notices/${notice.key}`, form)
+      onDone()
+    } catch (e) {
+      setError(String(e))
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="resolve-form">
+      <div className="mapping-grid">
+        {isSellToCover && (
+          <label>
+            Withholding taxes on this trade (from the broker’s trade details)
+            <input
+              inputMode="decimal"
+              placeholder="e.g. 10966.96"
+              value={withholding}
+              onChange={(e) => setWithholding(e.target.value)}
+            />
+          </label>
+        )}
+        <label>
+          Evidence (PDF or screenshot, optional)
+          <input ref={fileRef} type="file" accept=".pdf,image/*" />
+        </label>
+      </div>
+      <label className="muted small">
+        Note
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={
+            isSellToCover
+              ? 'e.g. RSU vest sell-to-cover — Schwab withheld tax from the proceeds'
+              : 'What you checked / why this is fine'
+          }
+        />
+      </label>
+      {error && <p className="error-text small">{error}</p>}
+      <div className="card-actions">
+        <button className="btn primary" disabled={saving} onClick={save}>
+          {saving ? 'Saving…' : 'Save confirmation'}
+        </button>
+        <button className="btn" onClick={onCancel}>
+          Cancel
+        </button>
       </div>
     </div>
   )

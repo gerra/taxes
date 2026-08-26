@@ -74,6 +74,16 @@ CREATE TABLE IF NOT EXISTS column_mappings (
     mapping     TEXT NOT NULL  -- JSON: {date, description, amount, currency, interest_match}
 );
 
+CREATE TABLE IF NOT EXISTS notice_resolutions (
+    user_id        INTEGER NOT NULL REFERENCES users(id),
+    key            TEXT NOT NULL,     -- stable notice key, e.g. amount_adjusted__META__2025-02-25
+    note           TEXT NOT NULL DEFAULT '',
+    data           TEXT NOT NULL DEFAULT '{}',  -- JSON: e.g. {"withholding": "10966.96"}
+    evidence_name  TEXT,              -- original filename of the attached proof (encrypted on disk)
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, key)
+);
+
 CREATE TABLE IF NOT EXISTS planner_inputs (
     user_id   INTEGER NOT NULL REFERENCES users(id),
     tax_year  INTEGER NOT NULL,

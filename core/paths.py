@@ -22,6 +22,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("TAXES_DATA_DIR") or os.path.join(_REPO_ROOT, "data")
 DB_PATH = os.environ.get("TAXES_DB_PATH") or os.path.join(DATA_DIR, "taxes.db")
 DOCS_DIR = os.path.join(DATA_DIR, "docs")
+EVIDENCE_DIR = os.path.join(DATA_DIR, "evidence")
 RUNS_DIR = os.path.join(DATA_DIR, "runs")
 CACHE_DIR = os.path.join(DATA_DIR, "cache")
 TMP_DIR = os.path.join(DATA_DIR, "tmp")
@@ -37,6 +38,10 @@ def run_dir(run_id: int) -> str:
     return os.path.join(RUNS_DIR, str(run_id))
 
 
+def evidence_path(user_id: int, key: str) -> str:
+    return os.path.join(EVIDENCE_DIR, str(user_id), f"{key}.enc")
+
+
 def ensure_dirs() -> None:
-    for d in (DATA_DIR, DOCS_DIR, RUNS_DIR, CACHE_DIR, TMP_DIR):
+    for d in (DATA_DIR, DOCS_DIR, EVIDENCE_DIR, RUNS_DIR, CACHE_DIR, TMP_DIR):
         os.makedirs(d, exist_ok=True)

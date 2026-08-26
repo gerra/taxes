@@ -7,6 +7,7 @@ occurrences: [str], why, action, count, raw: [str]}. Text fields may contain
 Unknown messages fall through as a generic warning with the raw text, so
 nothing the engine says is ever hidden."""
 
+import hashlib
 import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -64,6 +65,8 @@ def _discrepancy(m: re.Match, raw: str) -> dict:
     y, mo, d, action, symbol, qty, price, ccy, broker, supplied, calculated = m.groups()
     verb = "sale" if action == "SELL" else action.lower()
     return {
+        "key": f"amount_adjusted__{symbol}__{int(y):04d}-{int(mo):02d}-{int(d):02d}",
+        "data": {"supplied": supplied, "calculated": calculated, "currency": ccy},
         "kind": "warning",
         "category": "amount_adjusted",
         "title": f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — proceeds adjusted",
@@ -105,6 +108,7 @@ def build_notices(warnings: list[str]) -> list[dict]:
             group = bnb.setdefault(
                 symbol,
                 {
+                    "key": f"bed_and_breakfast__{symbol}",
                     "kind": "info",
                     "category": "bed_and_breakfast",
                     "title": f"30-day rule applied to [[{symbol}]]",
@@ -137,6 +141,7 @@ def build_notices(warnings: list[str]) -> list[dict]:
             group = treaty.setdefault(
                 symbol,
                 {
+                    "key": f"withholding__{symbol}",
                     "kind": "warning",
                     "category": "withholding",
                     "title": f"[[{symbol}]] dividends taxed above the treaty rate",
@@ -171,6 +176,7 @@ def build_notices(warnings: list[str]) -> list[dict]:
         if "balance" in lowered and "reconcile" in lowered:
             notices.append(
                 {
+                    "key": "balance",
                     "kind": "warning",
                     "category": "balance",
                     "title": "Cash balance didn't reconcile",
@@ -199,6 +205,7 @@ def build_notices(warnings: list[str]) -> list[dict]:
             kind, title = "warning", text[:90] + ("…" if len(text) > 90 else "")
         notices.append(
             {
+                "key": "other__" + hashlib.sha1(text.encode()).hexdigest()[:10],
                 "kind": kind,
                 "category": "other",
                 "title": title,
@@ -226,4 +233,48 @@ def build_notices(warnings: list[str]) -> list[dict]:
 
     order = {"error": 0, "warning": 1, "info": 2}
     notices.sort(key=lambda n: order[n["kind"]])
+    return notices
+
+
+_KIND_ORDER = {"error": 0, "warning": 1, "info": 2}
+
+
+def apply_resolutions(notices: list[dict], resolutions: dict[str, dict]) -> list[dict]:
+    """Attach the user's confirmation (note, evidence, sell-to-cover withholding) to
+    each notice and verify the arithmetic where possible. Resolved notices sort last."""
+    for n in notices:
+        r = resolutions.get(n["key"])
+        if not r:
+            n["resolution"] = None
+            continue
+        res = {
+            "note": r["note"],
+            "data": r["data"],
+            "evidence_name": r["evidence_name"],
+            "created_at": r["created_at"],
+            "verified": None,
+            "check": None,
+        }
+        withholding = r["data"].get("withholding")
+        if n["category"] == "amount_adjusted" and withholding:
+            try:
+                w = Decimal(str(withholding))
+                calc = Decimal(n["data"]["calculated"])
+                supplied = Decimal(n["data"]["supplied"])
+                ccy = n["data"]["currency"]
+                diff = abs(calc - w - supplied)
+                res["verified"] = diff < Decimal("0.05")
+                res["check"] = (
+                    f"{_money(calc, ccy)} − {_money(w, ccy)} withholding = "
+                    f"{_money(calc - w, ccy)}"
+                    + (
+                        " ✓ matches the broker's total"
+                        if res["verified"]
+                        else f" — broker total was {_money(supplied, ccy)} (off by {_money(diff, ccy)})"
+                    )
+                )
+            except (InvalidOperation, KeyError, TypeError):
+                pass
+        n["resolution"] = res
+    notices.sort(key=lambda n: (1 if n.get("resolution") else 0, _KIND_ORDER[n["kind"]]))
     return notices

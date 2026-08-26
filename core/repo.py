@@ -355,3 +355,54 @@ def set_planner_inputs(user_id: int, tax_year: int, data: dict) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# ── Notice resolutions ─────────────────────────────────────────────────────────
+
+
+def list_resolutions(user_id: int) -> dict[str, dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM notice_resolutions WHERE user_id = ?", (user_id,)
+        ).fetchall()
+        out = {}
+        for r in rows:
+            d = dict(r)
+            d["data"] = json.loads(d["data"])
+            out[d["key"]] = d
+        return out
+    finally:
+        conn.close()
+
+
+def get_resolution(user_id: int, key: str) -> dict | None:
+    return list_resolutions(user_id).get(key)
+
+
+def upsert_resolution(
+    user_id: int, key: str, note: str, data: dict, evidence_name: str | None
+) -> None:
+    conn = get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO notice_resolutions (user_id, key, note, data, evidence_name)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (user_id, key) DO UPDATE SET
+                 note = excluded.note, data = excluded.data,
+                 evidence_name = COALESCE(excluded.evidence_name, notice_resolutions.evidence_name),
+                 created_at = datetime('now')""",
+            (user_id, key, note, json.dumps(data), evidence_name),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_resolution(user_id: int, key: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM notice_resolutions WHERE user_id = ? AND key = ?", (user_id, key))
+        conn.commit()
+    finally:
+        conn.close()

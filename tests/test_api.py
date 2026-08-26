@@ -65,3 +65,32 @@ def test_duplicate_account_rejected(auth_client):
         auth_client.post("/api/accounts", json={**body, "name": "freetrade — gia"}).status_code
         == 409
     )
+
+
+def test_notice_resolution_roundtrip(auth_client):
+    import io
+
+    key = "amount_adjusted__META__2025-02-25"
+    resp = auth_client.put(
+        f"/api/notices/{key}",
+        data={
+            "note": "sell to cover",
+            "withholding": "$10,966.96",
+            "file": (io.BytesIO(b"%PDF-1.4 fake"), "trade.pdf"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200, resp.get_json()
+    body = resp.get_json()
+    assert body["data"]["withholding"] == "10966.96"
+    assert body["evidence_name"] == "trade.pdf"
+
+    ev = auth_client.get(f"/api/notices/{key}/evidence")
+    assert ev.status_code == 200
+    assert ev.data == b"%PDF-1.4 fake"  # decrypted transparently
+
+    assert auth_client.put(f"/api/notices/{key}", data={"withholding": "abc"}).status_code == 400
+    assert auth_client.put("/api/notices/bad key!", data={}).status_code == 400
+
+    assert auth_client.delete(f"/api/notices/{key}").status_code == 200
+    assert auth_client.get(f"/api/notices/{key}/evidence").status_code == 404

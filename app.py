@@ -28,7 +28,7 @@ logging.basicConfig(
 
 from flask import Flask, g, jsonify, request, send_from_directory  # noqa: E402
 
-from blueprints import accounts, calc, documents, planner, report  # noqa: E402
+from blueprints import accounts, calc, documents, notices, planner, report  # noqa: E402
 from blueprints import auth as auth_bp  # noqa: E402
 from core import auth, db  # noqa: E402
 
@@ -48,6 +48,7 @@ app.register_blueprint(documents.bp)
 app.register_blueprint(calc.bp)
 app.register_blueprint(report.bp)
 app.register_blueprint(planner.bp)
+app.register_blueprint(notices.bp)
 
 # ── Auth middleware ────────────────────────────────────────────────────────────
 

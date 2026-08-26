@@ -845,3 +845,79 @@ select:focus {
 .stat-card.tip-wrap {
   cursor: help;
 }
+
+/* ── Notice resolutions ────────────────────────────────────────────────── */
+
+.notice-resolved {
+  background: var(--mint-soft);
+  border-color: #bfe9d8;
+}
+
+.notice-resolved .notice-icon {
+  color: var(--mint);
+}
+
+.notice-resolution {
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  font-size: 13.5px;
+}
+
+.notice-resolution .check {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.notice-resolution .check.ok {
+  color: var(--mint);
+}
+
+.notice-resolution .check.bad {
+  color: var(--bad);
+}
+
+.notice-resolution .meta {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.resolve-form {
+  margin-top: 12px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 12px;
+}
+
+.resolve-form .mapping-grid {
+  margin-bottom: 10px;
+}
+
+.resolve-form textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  resize: vertical;
+}
+
+.resolve-form textarea:focus {
+  outline: none;
+  border-color: var(--coral);
+}
+
+.notice-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}

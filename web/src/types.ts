@@ -127,7 +127,19 @@ export interface SABox {
   explain: string
 }
 
+export interface NoticeResolution {
+  note: string
+  data: Record<string, string>
+  evidence_name: string | null
+  created_at: string
+  verified: boolean | null
+  check: string | null
+}
+
 export interface Notice {
+  key: string
+  data?: Record<string, string>
+  resolution?: NoticeResolution | null
   kind: 'info' | 'warning' | 'error'
   category: string
   title: string

@@ -76,7 +76,7 @@ export default function ReportView({ year }: { year: number }) {
         <p className="muted">No calculation yet for this year — hit Calculate.</p>
       )}
 
-      {report && <ReportBody report={report} />}
+      {report && <ReportBody report={report} onChange={load} />}
     </div>
   )
 }
@@ -122,7 +122,7 @@ function CalcErrorCard({
   )
 }
 
-function ReportBody({ report }: { report: Report }) {
+function ReportBody({ report, onChange }: { report: Report; onChange: () => void }) {
   const { view, bundle } = report
   return (
     <div>
@@ -132,7 +132,7 @@ function ReportBody({ report }: { report: Report }) {
           the gaps in the Documents tab.
         </div>
       )}
-      <Notices notices={view.notices ?? []} />
+      <Notices notices={view.notices ?? []} onChange={onChange} />
 
       <TaxDueCard taxDue={view.tax_due} deadline={view.filing_deadline} />
 
