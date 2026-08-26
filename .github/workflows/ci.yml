@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: |
+          .venv/bin/ruff check .
+          .venv/bin/ruff format --check .
+
+      - name: Test
+        env:
+          JWT_SECRET: ci-test-jwt-secret-not-used-in-production
+          FERNET_KEY: "1oLpTPWIvV3EbxT9WcxHDVBT8wFVpS8_om3crJhrf9M="
+        run: .venv/bin/python -m pytest tests/ -v --tb=short
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: cd web && npm ci
+
+      - name: Lint
+        run: cd web && npx eslint src/ && npx prettier --check src/
+
+      - name: Typecheck
+        run: cd web && npx tsc -b
+
+      - name: Test
+        run: cd web && npx vitest run
+
+  deploy:
+    name: Deploy to Hetzner
+    needs: [python, frontend]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: default
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rsync source to server
+        uses: burnett01/rsync-deployments@6.0.0
+        with:
+          switches: >-
+            -avz --delete
+            --exclude '.git' --exclude '.venv' --exclude 'secrets' --exclude 'data'
+            --exclude '__pycache__' --exclude '*.pyc' --exclude 'node_modules'
+            --exclude 'web/dist' --exclude '.pytest_cache' --exclude '.ruff_cache'
+            --exclude 'out'
+          path: ./
+          remote_path: /root/Projects/taxes
+          remote_host: ${{ secrets.DEPLOY_HOST }}
+          remote_user: ${{ secrets.DEPLOY_USER }}
+          remote_key: ${{ secrets.DEPLOY_KEY }}
+
+      - name: Install deps, build frontend, restart service
+        id: remote_deploy
+        run: |
+          echo "${{ secrets.DEPLOY_KEY }}" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "
+              set -eo pipefail
+              trap 'rc=\$?; echo \"--- deploy failed, recent journal: ---\"; journalctl -u taxes -n 150 --no-pager || true; systemctl status taxes --no-pager || true; exit \$rc' ERR
+              export NVM_DIR=/root/.nvm
+              . /root/.nvm/nvm.sh
+              export PATH=\"/root/.local/bin:\$PATH\"
+              cd /root/Projects/taxes
+              command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+              [ -d .venv ] || uv venv --python 3.12 .venv
+              uv pip install --python .venv/bin/python -r requirements.txt
+              cd web && npm ci --no-audit --no-fund && npm run build && cd ..
+              install -m 644 deploy/taxes.service /etc/systemd/system/taxes.service
+              systemctl daemon-reload
+              systemctl enable taxes >/dev/null 2>&1 || true
+              systemctl restart taxes
+              sleep 3
+              systemctl is-active --quiet taxes
+              HTTP_CODE=\$(curl -sS -o /tmp/taxes_smoke.out -w '%{http_code}' https://taxes.gerra.sh/api/auth/me || echo '000')
+              echo \"smoke test: HTTP \$HTTP_CODE\"
+              if [ \"\$HTTP_CODE\" = '000' ] || [ \"\$HTTP_CODE\" -ge 500 ]; then cat /tmp/taxes_smoke.out; false; fi
+            "
+
+      - name: Collect service logs on failure
+        if: failure() && steps.remote_deploy.conclusion == 'failure'
+        run: |
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "journalctl -u taxes -n 500 --no-pager" > taxes-journal.log || true
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "systemctl status taxes --no-pager; nginx -t; tail -n 200 /var/log/nginx/error.log" > taxes-status.log || true
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: taxes-deploy-logs
+          path: |
+            taxes-journal.log
+            taxes-status.log
+          retention-days: 14
+          if-no-files-found: ignore

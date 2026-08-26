@@ -1,0 +1,7 @@
+Flask>=3.0
+python-dotenv
+PyJWT
+cryptography
+requests
+gunicorn
+cgt-calc @ git+https://github.com/gerra/capital-gains-calculator@gerra

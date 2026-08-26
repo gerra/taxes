@@ -1,0 +1,16 @@
+/.venv/
+__pycache__/
+*.pyc
+/data/
+/out/
+/secrets/*
+!/secrets/README.md
+!/secrets/.env.example
+!/secrets/.env.local.example
+/web/node_modules/
+/web/dist/
+/.pytest_cache/
+/.ruff_cache/
+.DS_Store
+.coverage
+coverage/

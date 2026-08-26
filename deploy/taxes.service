@@ -1,0 +1,23 @@
+# systemd unit for taxes.gerra.sh — installed by CI on every deploy
+# (www-app pattern: `install -m 644 deploy/taxes.service /etc/systemd/system/`).
+#
+# Env vars come from secrets/.env, loaded by app.py via dotenv — no
+# EnvironmentFile here (systemd's parser quotes differently).
+
+[Unit]
+Description=taxes.gerra.sh Flask app (gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Projects/taxes
+ExecStart=/root/Projects/taxes/.venv/bin/gunicorn -c gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=taxes
+
+[Install]
+WantedBy=multi-user.target
