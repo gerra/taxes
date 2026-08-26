@@ -108,7 +108,9 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
       <div className="card-head">
         <div>
           <b>{account.name}</b>
-          <span className="muted"> · {TYPE_LABELS[account.type]}</span>
+          {account.name !== TYPE_LABELS[account.type] && (
+            <span className="muted"> · {TYPE_LABELS[account.type]}</span>
+          )}
         </div>
         <span className={`badge ${status.cls}`}>{status.label}</span>
       </div>
@@ -120,10 +122,9 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
               Missing <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>
             </div>
           ))}
-          <p className="muted small">{coverage.instructions}</p>
         </div>
       )}
-      {coverage.status === 'missing' && <p className="muted small">{coverage.instructions}</p>}
+      {coverage.status !== 'ok' && <p className="muted small">{coverage.instructions}</p>}
 
       {coverage.documents.length > 0 && (
         <table className="doc-table">
