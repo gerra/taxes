@@ -1,0 +1,34 @@
+# Redirect-only vhost for parked TLDs (taxes.gerra.kz, taxes.gerra.london) —
+# 301 everything to the canonical taxes.gerra.sh. Rendered by
+# scripts/push-conf.sh with {{TLD}} substituted; each TLD has its own cert:
+#   ssh hetzner_gb 'certbot certonly --nginx -d taxes.gerra.<tld>'
+
+server {
+    server_name taxes.gerra.{{TLD}};
+
+    location / {
+        return 301 https://taxes.gerra.sh$request_uri;
+    }
+
+    include /opt/ssl-manager/web_server_includes/nginx_well_known_service_template.conf;
+
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    ssl_certificate /etc/letsencrypt/live/taxes.gerra.{{TLD}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/taxes.gerra.{{TLD}}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name taxes.gerra.{{TLD}};
+
+    # Redirect scoped to location / so the ACME .well-known include stays reachable
+    location / {
+        return 301 https://taxes.gerra.sh$request_uri;
+    }
+
+    include /opt/ssl-manager/web_server_includes/nginx_well_known_service_template.conf;
+}
