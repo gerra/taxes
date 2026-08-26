@@ -217,22 +217,43 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             }
         )
 
-    exempt_events = [e for e in bundle.get("disposals", []) if e.get("exempt")]
+    # T-bill redemptions (reconstructed by the parser as sales at par) are
+    # exempt disposals too, but their return is the SA101 income above, so the
+    # banner keeps them apart from the gilts' notional gains.
+    tbill_symbols = {
+        s["symbol"]
+        for s in (bundle.get("exempt") or {}).get("securities", [])
+        if s["kind"] == "tbill"
+    }
+    all_exempt = [e for e in bundle.get("disposals", []) if e.get("exempt")]
+    exempt_events = [e for e in all_exempt if e["symbol"] not in tbill_symbols]
+    tbill_events = [e for e in all_exempt if e["symbol"] in tbill_symbols]
     exempt_disposals = None
-    if exempt_events:
+    if all_exempt:
         exempt_gain = sum(_f(e["gain"]) for e in exempt_events)
+        symbols = sorted({e["symbol"] for e in exempt_events})
+        parts = []
+        if exempt_events:
+            parts.append(
+                f"{len(exempt_events)} disposal{'s' if len(exempt_events) != 1 else ''} of "
+                f"gilts ({', '.join(symbols)}) with a notional "
+                f"{'gain' if exempt_gain >= 0 else 'loss'} of £{abs(exempt_gain):,.2f}"
+            )
+        if tbill_events:
+            parts.append(
+                f"{len(tbill_events)} UK T-bill redemption{'s' if len(tbill_events) != 1 else ''} "
+                "whose discount is income (the SA101 row), not a gain"
+            )
         exempt_disposals = {
             "count": len(exempt_events),
+            "tbill_count": len(tbill_events),
             "proceeds": round(sum(_f(e["amount"]) for e in exempt_events), 2),
             "gain": round(exempt_gain, 2),
-            "symbols": sorted({e["symbol"] for e in exempt_events}),
+            "symbols": symbols,
             "explain": (
-                f"{len(exempt_events)} disposal{'s' if len(exempt_events) != 1 else ''} of "
-                f"gilts or UK T-bills ({', '.join(sorted({e['symbol'] for e in exempt_events}))}) "
-                f"with a notional {'gain' if exempt_gain >= 0 else 'loss'} of "
-                f"£{abs(exempt_gain):,.2f} — exempt from capital gains tax under TCGA 1992 "
-                "s115, so not counted in the SA108 boxes above and not a disposal to declare. "
-                "Interest on them is still taxable."
+                " and ".join(parts) + " — exempt from capital gains tax under TCGA 1992 "
+                "s115, so not counted in the SA108 boxes above and not disposals to declare. "
+                "Interest on gilts is still taxable."
             ),
         }
 

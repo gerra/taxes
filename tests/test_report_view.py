@@ -122,6 +122,7 @@ def test_exempt_disposals_summarised_and_kept_out_of_the_split():
     view = build_view(INCOME_BUNDLE, 2024, None)
     ex = view["exempt_disposals"]
     assert ex["count"] == 1
+    assert ex["tbill_count"] == 0
     assert ex["proceeds"] == 95.2
     assert ex["gain"] == 1.0
     assert ex["symbols"] == ["TN28"]
@@ -207,3 +208,45 @@ def test_dividends_split_by_isin_country_and_tbill_row():
     assert "1 UK Treasury bill matured" in boxes[("SA101 Ai1", "3")]["explain"]
     keys = {n["key"] for n in view["notices"]}
     assert "tbill_returns" in keys
+
+
+def test_tbill_redemptions_kept_apart_from_gilt_gains():
+    bundle = {
+        **INCOME_BUNDLE,
+        "disposals": [
+            *INCOME_BUNDLE["disposals"],
+            {
+                "date": "2024-07-15",
+                "symbol": "GB00BP243M73",
+                "gain": "12.12",
+                "entries": [],
+                "amount": "3047.95",
+                "exempt": True,
+            },
+        ],
+        "exempt": {
+            "securities": [
+                {
+                    "symbol": "GB00BP243M73",
+                    "isin": "GB00BP243M73",
+                    "kind": "tbill",
+                    "title": "UK T-Bill 15/07/24",
+                    "source": "detected",
+                },
+                {
+                    "symbol": "TN28",
+                    "isin": "GB00BMBL1G81",
+                    "kind": "gilt",
+                    "title": "1/8% Gilt 2028",
+                    "source": "detected",
+                },
+            ],
+            "ais_applies": False,
+            "tbills": [],
+        },
+    }
+    ex = build_view(bundle, 2024, None)["exempt_disposals"]
+    assert ex["count"] == 1 and ex["tbill_count"] == 1
+    assert ex["gain"] == 1.0  # the T-bill's 12.12 is income, not a notional gain
+    assert ex["symbols"] == ["TN28"]
+    assert "1 UK T-bill redemption whose discount is income" in ex["explain"]

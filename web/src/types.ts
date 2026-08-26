@@ -303,6 +303,7 @@ export interface ReportView {
   rate_change_split: { before: number; after: number; date: string } | null
   exempt_disposals: {
     count: number
+    tbill_count: number
     proceeds: number
     gain: number
     symbols: string[]

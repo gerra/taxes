@@ -342,11 +342,17 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
       {view.exempt_disposals && (
         <div className="banner info">
           <b>
-            {view.exempt_disposals.count} CGT-exempt disposal
-            {view.exempt_disposals.count === 1 ? '' : 's'} (
-            {view.exempt_disposals.symbols.join(', ')}
-            ): {gbp(view.exempt_disposals.proceeds)} proceeds, {gbp(view.exempt_disposals.gain)}{' '}
-            notional gain.
+            {view.exempt_disposals.count > 0 && (
+              <>
+                {view.exempt_disposals.count} CGT-exempt gilt disposal
+                {view.exempt_disposals.count === 1 ? '' : 's'} (
+                {view.exempt_disposals.symbols.join(', ')}): {gbp(view.exempt_disposals.proceeds)}{' '}
+                proceeds, {gbp(view.exempt_disposals.gain)} notional gain.{' '}
+              </>
+            )}
+            {view.exempt_disposals.tbill_count > 0 && (
+              <>{view.exempt_disposals.tbill_count} T-bill redemptions, exempt.</>
+            )}
           </b>{' '}
           {view.exempt_disposals.explain}
         </div>
