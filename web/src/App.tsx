@@ -57,8 +57,29 @@ export default function App() {
         {tab === 'Planner' && <PlannerView year={year} />}
       </main>
       <footer className="disclaimer">
-        Computed hints from your own data — not tax advice. Verify against the HMRC forms before
-        filing.
+        <p>
+          Computed hints from your own data — not tax advice. Verify against the HMRC forms before
+          filing.
+        </p>
+        <p className="credit">
+          Calculations by{' '}
+          <a
+            href="https://github.com/KapJI/capital-gains-calculator"
+            target="_blank"
+            rel="noreferrer"
+          >
+            cgt-calc
+          </a>{' '}
+          by Ruslan Sayfutdinov (MIT), via{' '}
+          <a
+            href="https://github.com/gerra/capital-gains-calculator"
+            target="_blank"
+            rel="noreferrer"
+          >
+            a small fork
+          </a>
+          .
+        </p>
       </footer>
     </div>
   )

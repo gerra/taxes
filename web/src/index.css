@@ -535,6 +535,26 @@ select:focus {
   text-align: center;
 }
 
+.disclaimer p {
+  margin: 0;
+}
+
+.disclaimer .credit {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.disclaimer a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.disclaimer a:hover {
+  text-decoration-color: currentColor;
+}
+
 /* ── Coverage bar ──────────────────────────────────────────────────────── */
 
 .coverage {

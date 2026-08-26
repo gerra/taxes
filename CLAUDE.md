@@ -29,8 +29,12 @@ interfaces — read `00-overview.md` first).
 - `make venv install` (uv, Python 3.12), `make test`, `make lint`, `make format`.
 - Run: `.venv/bin/python app.py` + `cd web && npm run dev`.
 - cgt-calc dep: fork at github.com/gerra/capital-gains-calculator, branch `gerra`
-  (locally: `../capital-gains-calculator`). Upgrades: rebase `gerra` on upstream,
-  re-pin in requirements.txt, run `tests/test_engine_integration.py`.
+  (locally: `../capital-gains-calculator`, installed editable into `.venv`, so the
+  checkout IS the local engine; the server installs `@gerra` from GitHub).
+  Upgrades: `git fetch origin && git rebase origin/main gerra`, fix conflicts, run
+  the fork's tests, `uv pip install --python .venv/bin/python -e ../capital-gains-calculator`,
+  run `make test` here, then `git push --force-with-lease gerra gerra` (the branch
+  pin means the next taxes deploy picks it up).
 
 ## Deploy
 
