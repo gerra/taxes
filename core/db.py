@@ -23,6 +23,20 @@ CREATE TABLE IF NOT EXISTS allowed_emails (
     email TEXT PRIMARY KEY
 );
 
+-- Everyone who has ever tried to sign in without being allowed, plus emails the
+-- admin approved/declined by hand. allowed_emails stays the actual gate; this is
+-- the audit trail the admin panel shows.
+CREATE TABLE IF NOT EXISTS access_requests (
+    email       TEXT PRIMARY KEY,
+    name        TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'pending',  -- pending|approved|declined
+    note        TEXT NOT NULL DEFAULT '',         -- requester's message to the admin
+    attempts    INTEGER NOT NULL DEFAULT 1,       -- sign-in attempts while not allowed
+    first_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+    decided_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id              INTEGER NOT NULL REFERENCES users(id),
@@ -102,6 +116,12 @@ CREATE TABLE IF NOT EXISTS planner_inputs (
 );
 """
 
+# Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS never
+# alters an existing table, so these are applied individually when missing.
+_COLUMN_MIGRATIONS = [
+    ("users", "last_login_at", "TEXT"),
+]
+
 
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(paths.DB_PATH)
@@ -116,6 +136,11 @@ def ensure_db() -> None:
     conn = get_conn()
     try:
         conn.executescript(_SCHEMA)
+        for table, column, decl in _COLUMN_MIGRATIONS:
+            existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                _log.info("migrated: %s.%s added", table, column)
         conn.commit()
     finally:
         conn.close()

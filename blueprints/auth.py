@@ -1,8 +1,8 @@
-"""Auth HTTP routes: Google OAuth flow, /logout, /api/auth/me."""
+"""Auth HTTP routes: Google OAuth flow, /logout, /api/auth/me, and the
+access-request endpoints a not-yet-allowed visitor can use from the login page."""
 
 import logging
 import secrets
-import urllib.parse
 
 import requests
 from flask import Blueprint, jsonify, redirect, request, session
@@ -36,11 +36,23 @@ def google_callback():
 
     user = repo.get_or_create_user(info["email"], info["name"])
     if user is None:
-        _log.warning("sign-in rejected for %s (not in allowed_emails)", info["email"])
-        return redirect("/?denied=" + urllib.parse.quote(info["email"]))
+        req = repo.record_access_request(info["email"], info["name"])
+        if req["is_new"]:
+            _log.warning(
+                "ACCESS REQUEST from %s (%s) — approve it in the Admin tab",
+                req["email"],
+                req["name"],
+            )
+        else:
+            _log.info("sign-in attempt %d by %s (%s)", req["attempts"], req["email"], req["status"])
+        resp = redirect("/")
+        auth.set_access_cookie(resp, req["email"])
+        return resp
 
+    repo.touch_last_login(user["id"])
     resp = redirect("/")
     auth.set_auth_cookie(resp, user["id"], user["email"])
+    resp.delete_cookie(auth.ACCESS_COOKIE_NAME)
     _log.info("user %s signed in", user["email"])
     return resp
 
@@ -60,6 +72,45 @@ def me():
     if not payload:
         return jsonify(None)
     user = repo.get_user(int(payload["sub"]))
-    if not user:
+    if not user or not repo.is_email_allowed(user["email"]):
         return jsonify(None)
-    return jsonify({"id": user["id"], "email": user["email"], "name": user["name"]})
+    out = {"id": user["id"], "email": user["email"], "name": user["name"], "is_admin": False}
+    if auth.is_admin(user["email"]):
+        out["is_admin"] = True
+        out["pending_requests"] = repo.count_pending_requests()
+    return jsonify(out)
+
+
+# ── Access requests (unauthenticated; identified by the tx_access cookie) ─────
+
+
+def _access_email() -> str | None:
+    token = request.cookies.get(auth.ACCESS_COOKIE_NAME)
+    return auth.decode_access_token(token) if token else None
+
+
+@bp.get("/api/access/me")
+def access_me():
+    """Status of the visitor's access request, or null if they haven't signed in
+    with Google recently. Exempt from the auth middleware (see app.py)."""
+    email = _access_email()
+    req = repo.get_access_request(email) if email else None
+    if not req:
+        return jsonify(None)
+    return jsonify(
+        {"email": req["email"], "name": req["name"], "status": req["status"], "note": req["note"]}
+    )
+
+
+@bp.put("/api/access/me")
+def access_note():
+    """Let the requester leave a short message for the admin."""
+    email = _access_email()
+    req = repo.get_access_request(email) if email else None
+    if not req:
+        return jsonify({"error": "No access request for this browser"}), 401
+    body = request.get_json(force=True) or {}
+    note = str(body.get("note") or "").strip()[:500]
+    repo.set_access_request_note(email, note)
+    _log.info("access request note from %s: %s", email, note[:200])
+    return jsonify({"ok": True, "note": note})

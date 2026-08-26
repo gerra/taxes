@@ -1350,3 +1350,136 @@ select:focus {
   border-top-color: transparent;
   border-bottom-color: var(--ink);
 }
+
+/* ── Access requests (login page) ──────────────────────────────────────── */
+
+.access-status {
+  text-align: left;
+  margin: 0 0 22px;
+}
+
+.access-status p {
+  margin: 0 0 12px;
+}
+
+.access-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.access-note textarea {
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--panel);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.access-note textarea:focus {
+  outline: none;
+  border-color: var(--coral);
+}
+
+.access-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 10px 0 0;
+}
+
+.access-approved {
+  color: var(--mint);
+  font-weight: 600;
+}
+
+/* ── Admin tab ─────────────────────────────────────────────────────────── */
+
+.tab-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 5px;
+  margin-left: 7px;
+  border-radius: 999px;
+  background: var(--coral);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  vertical-align: 1px;
+}
+
+.tab.active .tab-count {
+  background: #fff;
+  color: var(--ink);
+}
+
+.admin .card .sa-table {
+  margin-top: 12px;
+  box-shadow: none;
+}
+
+.admin-email {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-note {
+  font-style: italic;
+  color: var(--muted);
+  max-width: 320px;
+}
+
+.admin-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-actions > * + * {
+  margin-left: 14px;
+}
+
+.admin-actions button.link {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+.admin-actions button.link:hover {
+  opacity: 1;
+}
+
+.admin-actions button.link.primary {
+  color: var(--coral);
+  opacity: 1;
+}
+
+.admin-actions button.link.danger {
+  color: var(--bad);
+  opacity: 0.85;
+}
+
+.btn.small {
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
+.admin-add {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.admin-add input {
+  flex: 1;
+  max-width: 340px;
+}

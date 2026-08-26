@@ -13,7 +13,7 @@ from core.db import get_conn
 
 def is_email_allowed(email: str) -> bool:
     email = email.lower()
-    if auth.ADMIN_EMAIL and email == auth.ADMIN_EMAIL.lower():
+    if auth.is_admin(email):
         return True
     conn = get_conn()
     try:
@@ -46,6 +46,174 @@ def get_user(user_id: int) -> dict | None:
     try:
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def touch_last_login(user_id: int) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE users SET last_login_at = datetime('now') WHERE id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Access requests (admin panel) ──────────────────────────────────────────────
+
+ACCESS_STATUSES = ("pending", "approved", "declined")
+
+
+def record_access_request(email: str, name: str) -> dict:
+    """A not-allowed email just tried to sign in: create or bump its request.
+
+    A declined email stays declined (only the admin can flip it); everything else
+    is pending. Returns the row plus ``is_new`` so the caller can log/notify once.
+    """
+    email = email.lower()
+    conn = get_conn()
+    try:
+        row = conn.execute("SELECT * FROM access_requests WHERE email = ?", (email,)).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO access_requests (email, name) VALUES (?, ?)", (email, name or "")
+            )
+            is_new = True
+        else:
+            conn.execute(
+                """UPDATE access_requests
+                   SET name = CASE WHEN ? != '' THEN ? ELSE name END,
+                       attempts = attempts + 1,
+                       last_seen = datetime('now'),
+                       status = CASE WHEN status = 'declined' THEN status ELSE 'pending' END
+                   WHERE email = ?""",
+                (name or "", name or "", email),
+            )
+            is_new = False
+        conn.commit()
+        out = dict(
+            conn.execute("SELECT * FROM access_requests WHERE email = ?", (email,)).fetchone()
+        )
+        out["is_new"] = is_new
+        return out
+    finally:
+        conn.close()
+
+
+def get_access_request(email: str) -> dict | None:
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM access_requests WHERE email = ?", (email.lower(),)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def set_access_request_note(email: str, note: str) -> None:
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE access_requests SET note = ? WHERE email = ?", (note, email.lower()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def count_pending_requests() -> int:
+    conn = get_conn()
+    try:
+        return conn.execute(
+            "SELECT count(*) FROM access_requests WHERE status = 'pending'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _set_access_status(conn, email: str, status: str, name: str = "") -> None:
+    conn.execute(
+        """INSERT INTO access_requests (email, name, status, attempts, decided_at)
+           VALUES (?, ?, ?, 0, datetime('now'))
+           ON CONFLICT(email) DO UPDATE SET
+               status = excluded.status,
+               decided_at = excluded.decided_at""",
+        (email, name, status),
+    )
+
+
+def approve_email(email: str, name: str = "") -> None:
+    """Grant access: add to allowed_emails and mark any request approved.
+
+    Works for emails that never asked (manual pre-approval) too.
+    """
+    email = email.lower()
+    conn = get_conn()
+    try:
+        conn.execute("INSERT OR IGNORE INTO allowed_emails (email) VALUES (?)", (email,))
+        _set_access_status(conn, email, "approved", name)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def decline_email(email: str) -> None:
+    """Refuse or revoke access. The user's data (if any) is kept; they just can't
+    sign in — and existing sessions stop working because every API request
+    re-checks is_email_allowed."""
+    email = email.lower()
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM allowed_emails WHERE lower(email) = ?", (email,))
+        _set_access_status(conn, email, "declined")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def forget_email(email: str) -> None:
+    """Drop the request record entirely (and any allowance)."""
+    email = email.lower()
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM allowed_emails WHERE lower(email) = ?", (email,))
+        conn.execute("DELETE FROM access_requests WHERE email = ?", (email,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_access() -> dict[str, list[dict]]:
+    """Everything the admin panel shows, grouped by status.
+
+    ``allowed`` is the real gate (allowed_emails) joined with users (for name /
+    last sign-in) and the request record (for when/why it was approved);
+    ``pending``/``declined`` come from access_requests alone.
+    """
+    conn = get_conn()
+    try:
+        allowed = [
+            dict(r)
+            for r in conn.execute(
+                """SELECT lower(a.email) AS email,
+                          coalesce(nullif(u.name, ''), r.name, '') AS name,
+                          r.note, r.decided_at, r.first_seen,
+                          u.created_at AS user_since, u.last_login_at
+                   FROM allowed_emails a
+                   LEFT JOIN users u ON lower(u.email) = lower(a.email)
+                   LEFT JOIN access_requests r ON r.email = lower(a.email)
+                   ORDER BY coalesce(r.decided_at, u.created_at, a.email) DESC"""
+            )
+        ]
+        allowed_set = {row["email"] for row in allowed}
+        pending, declined = [], []
+        for r in conn.execute(
+            "SELECT * FROM access_requests WHERE status != 'approved' ORDER BY last_seen DESC"
+        ):
+            row = dict(r)
+            if row["email"] in allowed_set:
+                continue  # allowed_emails wins over a stale request row
+            (pending if row["status"] == "pending" else declined).append(row)
+        return {"pending": pending, "allowed": allowed, "declined": declined}
     finally:
         conn.close()
 

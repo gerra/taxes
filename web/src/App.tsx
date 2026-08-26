@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import { useAuth } from './hooks/useAuth'
 import { lastElapsedTaxYear, taxYearLabel } from './utils/format'
+import AdminView from './views/AdminView'
 import DocumentsView from './views/DocumentsView'
 import LoginView from './views/LoginView'
 import PlannerView from './views/PlannerView'
 import ReportView from './views/ReportView'
 
 const TABS = ['Documents', 'Report', 'Planner'] as const
-type Tab = (typeof TABS)[number]
+type Tab = (typeof TABS)[number] | 'Admin'
 
 const CURRENT = lastElapsedTaxYear()
 
@@ -19,6 +20,12 @@ export default function App() {
   // Only years the backend has constants for (core/tax_years.py), newest first,
   // and never a year that hasn't finished yet.
   const [years, setYears] = useState<number[]>([CURRENT])
+  // Admin only: pending access requests, shown as a badge on the Admin tab.
+  const [pending, setPending] = useState(0)
+
+  useEffect(() => {
+    setPending(user?.pending_requests ?? 0)
+  }, [user])
 
   useEffect(() => {
     if (!user) return
@@ -47,6 +54,16 @@ export default function App() {
               {t}
             </button>
           ))}
+          {user.is_admin && (
+            <button
+              className={tab === 'Admin' ? 'tab active' : 'tab'}
+              onClick={() => setTab('Admin')}
+              title="Manage who can sign in"
+            >
+              Admin
+              {pending > 0 && <span className="tab-count">{pending}</span>}
+            </button>
+          )}
         </nav>
         <div className="topbar-right">
           <select
@@ -69,6 +86,7 @@ export default function App() {
         {tab === 'Documents' && <DocumentsView year={year} />}
         {tab === 'Report' && <ReportView year={year} />}
         {tab === 'Planner' && <PlannerView year={year} />}
+        {tab === 'Admin' && user.is_admin && <AdminView onPendingCount={setPending} />}
       </main>
       <footer className="disclaimer">
         <p>

@@ -29,9 +29,9 @@ logging.basicConfig(
 
 from flask import Flask, g, jsonify, request, send_from_directory  # noqa: E402
 
-from blueprints import accounts, calc, documents, notices, planner, report  # noqa: E402
+from blueprints import accounts, admin, calc, documents, notices, planner, report  # noqa: E402
 from blueprints import auth as auth_bp  # noqa: E402
-from core import auth, db  # noqa: E402
+from core import auth, db, repo  # noqa: E402
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET", secrets.token_hex(32))
@@ -44,6 +44,7 @@ db.ensure_db()
 # ── Register blueprints ────────────────────────────────────────────────────────
 
 app.register_blueprint(auth_bp.bp)
+app.register_blueprint(admin.bp)
 app.register_blueprint(accounts.bp)
 app.register_blueprint(documents.bp)
 app.register_blueprint(calc.bp)
@@ -54,21 +55,28 @@ app.register_blueprint(notices.bp)
 # ── Auth middleware ────────────────────────────────────────────────────────────
 
 
+# Reachable without a session: the login-state probe (returns null rather than
+# a red 401 on first load) and the access-request endpoints the login page uses.
+_PUBLIC_API = ("/api/auth/me", "/api/access/me")
+
+
 @app.before_request
 def _check_auth():
-    """Populate g.user_id/g.email for all /api/* routes.
-
-    /api/auth/me is exempted — it returns null gracefully when not logged in
-    so the browser doesn't show a red 401 on the initial page load.
-    """
+    """Populate g.user_id/g.email for all /api/* routes."""
     if not request.path.startswith("/api/"):
         return
-    if request.path == "/api/auth/me":
+    if request.path in _PUBLIC_API:
         return
     token = request.cookies.get(auth.COOKIE_NAME)
     payload = auth.decode_token(token) if token else None
     if not payload:
         return jsonify({"error": "Not authenticated"}), 401
+    # Re-check the gate on every request so revoking someone in the Admin tab
+    # takes effect immediately, not when their 7-day cookie expires.
+    if not repo.is_email_allowed(payload["email"]):
+        resp = jsonify({"error": "Access revoked"})
+        resp.delete_cookie(auth.COOKIE_NAME)
+        return resp, 401
     g.user_id = int(payload["sub"])
     g.email = payload["email"]
     g.auth_payload = payload
@@ -79,8 +87,6 @@ def _refresh_auth_cookie(response):
     """Sliding session: re-issue the auth cookie when it nears expiry."""
     payload = g.get("auth_payload")
     if payload and auth.needs_refresh(payload):
-        from core import repo
-
         user = repo.get_user(g.user_id)
         if user:
             auth.set_auth_cookie(response, user["id"], user["email"])

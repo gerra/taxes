@@ -12,6 +12,11 @@ JWT_ALGO = "HS256"
 JWT_EXPIRY = 7 * 24 * 3600  # 7 days
 REFRESH_THRESHOLD = 3 * 24 * 3600  # re-issue cookie when less than 3 days remain
 
+# Set after a Google sign-in by an email that isn't allowed yet, so the login page
+# can show that email's request status and let them leave a note for the admin.
+ACCESS_COOKIE_NAME = "tx_access"
+ACCESS_EXPIRY = 24 * 3600
+
 # Required in secrets/.env
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
@@ -34,11 +39,50 @@ def make_token(user_id: int, email: str) -> str:
 
 
 def decode_token(token: str) -> dict | None:
-    """Decode and verify a JWT. Returns payload dict or None on any error."""
+    """Decode and verify a JWT. Returns payload dict or None on any error.
+
+    Access-request tokens carry purpose=access and are never accepted here.
+    """
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
     except jwt.PyJWTError:
         return None
+    return None if payload.get("purpose") else payload
+
+
+def is_admin(email: str | None) -> bool:
+    return bool(email and ADMIN_EMAIL and email.lower() == ADMIN_EMAIL.lower())
+
+
+def make_access_token(email: str) -> str:
+    payload = {
+        "purpose": "access",
+        "email": email,
+        "exp": int(time.time()) + ACCESS_EXPIRY,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+def decode_access_token(token: str) -> str | None:
+    """Return the email an access-request token was issued for, or None."""
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except jwt.PyJWTError:
+        return None
+    if payload.get("purpose") != "access":
+        return None
+    return payload.get("email") or None
+
+
+def set_access_cookie(response, email: str) -> None:
+    response.set_cookie(
+        ACCESS_COOKIE_NAME,
+        make_access_token(email),
+        httponly=True,
+        samesite="Lax",
+        secure=BASE_URL.startswith("https://"),
+        max_age=ACCESS_EXPIRY,
+    )
 
 
 def needs_refresh(payload: dict) -> bool:

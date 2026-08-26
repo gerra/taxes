@@ -12,11 +12,17 @@ unit" improvement), so implementation is mostly transplanting known-good pattern
   gets `g.user_id` / `g.email`; `GET /api/auth/me` is the unauthenticated probe.
 - Auth routes: `/oauth/google/start`, `/oauth/google/callback`, `/logout`.
   Google only (no password/passkey/GitHub) — sign-ups rejected unless the email is in
-  `allowed_emails`.
+  `allowed_emails`. A rejected sign-in is recorded in `access_requests` (pending) and
+  leaves a 24h `tx_access` cookie so the login page can show the request status and
+  take a note for the admin (`GET/PUT /api/access/me`, unauthenticated).
+- Admin panel (`/api/admin/access` + `approve`/`decline`/`forget`), visible only to
+  `ADMIN_EMAIL` as the **Admin** tab: pending requests → approve/decline, allowed list
+  → revoke (takes effect on the next request, not at cookie expiry), pre-approve by
+  email. New requests are also logged at WARNING (`ACCESS REQUEST from …`).
 - `core/db.py` (`ensure_db()` idempotent migrations at startup), `core/repo.py`
   (all SQL lives here), `core/paths.py` (`TAXES_DATA_DIR` → prod `/var/lib/taxes`,
   dev `./data`; subdirs `docs/`, `logs/`, `tmp/`).
-- Tables owned: `users`, `allowed_emails`.
+- Tables owned: `users`, `allowed_emails`, `access_requests`.
 - React 18 + TS + Vite SPA in `web/` with `useAuth` hook, login view, empty
   authenticated dashboard shell with nav for the future modules.
 - Working pipeline: push to `main` → lint/test → deploy → `https://taxes.gerra.sh` updated.

@@ -2,6 +2,45 @@ export interface User {
   id: number
   email: string
   name: string
+  is_admin: boolean
+  pending_requests?: number // admin only
+}
+
+// What a not-yet-allowed visitor sees on the login page (GET /api/access/me).
+export interface AccessStatus {
+  email: string
+  name: string
+  status: 'pending' | 'approved' | 'declined'
+  note: string
+}
+
+// Admin panel rows (GET /api/admin/access). Timestamps are SQLite UTC strings.
+export interface AccessRequest {
+  email: string
+  name: string
+  status: 'pending' | 'approved' | 'declined'
+  note: string
+  attempts: number
+  first_seen: string
+  last_seen: string
+  decided_at: string | null
+}
+
+export interface AllowedEmail {
+  email: string
+  name: string
+  note: string | null
+  decided_at: string | null
+  first_seen: string | null
+  user_since: string | null
+  last_login_at: string | null
+  admin: boolean
+}
+
+export interface AccessLists {
+  pending: AccessRequest[]
+  allowed: AllowedEmail[]
+  declined: AccessRequest[]
 }
 
 export type AccountType =
