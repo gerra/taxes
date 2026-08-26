@@ -23,7 +23,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>taxes</h1>
+        <h1>
+          <img src="/favicon.svg" alt="" className="logo-mark small" />
+          <span className="wordmark">taxes</span>
+        </h1>
         <nav>
           {TABS.map((t) => (
             <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>

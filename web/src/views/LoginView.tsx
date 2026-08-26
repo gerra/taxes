@@ -3,6 +3,7 @@ export default function LoginView() {
   return (
     <div className="center-page">
       <div className="login-card">
+        <img src="/favicon.svg" alt="" className="logo-mark" />
         <h1>taxes.gerra.sh</h1>
         <p>UK Self Assessment investment figures, explained.</p>
         {denied && (
