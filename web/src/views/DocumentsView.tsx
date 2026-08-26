@@ -126,6 +126,8 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
         <span className={`badge ${status.cls}`}>{status.label}</span>
       </div>
 
+      <CoverageBar coverage={coverage} />
+
       {coverage.gaps.length > 0 && (
         <div className="gaps">
           {coverage.gaps.map((g, i) => (
@@ -199,6 +201,33 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
         />
       )}
     </section>
+  )
+}
+
+function CoverageBar({ coverage }: { coverage: AccountCoverage }) {
+  const start = new Date(coverage.required.start).getTime()
+  const end = new Date(coverage.required.end).getTime()
+  const span = end - start
+  if (!(span > 0)) return null
+  const seg = (s: string, e: string) => {
+    const a = Math.max(start, new Date(s).getTime())
+    const b = Math.min(end, new Date(e).getTime() + 86400000) // end date inclusive
+    if (b <= a) return null
+    return { left: `${((a - start) / span) * 100}%`, width: `${((b - a) / span) * 100}%` }
+  }
+  return (
+    <div className="coverage" title="Green = covered by uploaded documents; amber = missing">
+      <div className="coverage-bar">
+        {coverage.covered.map((r, i) => {
+          const pos = seg(r.start, r.end)
+          return pos ? <div key={i} className="coverage-fill" style={pos} /> : null
+        })}
+      </div>
+      <div className="coverage-labels">
+        <span>{shortDate(coverage.required.start)}</span>
+        <span>{shortDate(coverage.required.end)}</span>
+      </div>
+    </div>
   )
 }
 

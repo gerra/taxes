@@ -534,3 +534,32 @@ select:focus {
   font-size: 12.5px;
   text-align: center;
 }
+
+/* ── Coverage bar ──────────────────────────────────────────────────────── */
+
+.coverage {
+  margin: 12px 0 2px;
+}
+
+.coverage-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--amber-soft);
+  overflow: hidden;
+}
+
+.coverage-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--mint);
+}
+
+.coverage-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
