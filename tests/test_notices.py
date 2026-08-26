@@ -150,3 +150,26 @@ def test_discrepancy_detects_backup_withholding():
     assert "tax withheld" in n["title"]
     assert "W-8BEN" in n["why"]
     assert "sell-to-cover" not in n["why"]
+
+
+def test_refund_turns_discrepancy_into_info():
+    refunds = [
+        {
+            "symbol": "META",
+            "sale_date": "2025-02-25",
+            "refund_date": "2025-03-04",
+            "amount": "10966.96",
+            "currency": "USD",
+            "days": 7,
+        }
+    ]
+    [n] = build_notices([DISCREPANCY], refunds)
+    assert n["kind"] == "info"
+    assert "then refunded" in n["title"]
+    assert "[[$10,966.96]]" in n["summary"] and "[[4 Mar 2025]]" in n["summary"]
+    assert "nothing to reclaim" in n["summary"]
+    assert n["action"] is None
+    assert "1040-NR" not in n["why"]
+    # a refund for a different sale doesn't match
+    [n2] = build_notices([DISCREPANCY], [{**refunds[0], "sale_date": "2025-01-01"}])
+    assert n2["kind"] == "warning"

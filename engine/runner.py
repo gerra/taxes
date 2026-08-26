@@ -21,6 +21,9 @@ _log = logging.getLogger(__name__)
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER_TIMEOUT = 240  # seconds; below gunicorn's 300s
 
+# Bump when the worker/bundle shape changes so cached runs are recomputed.
+ENGINE_VERSION = 2
+
 RAW_HEADER = ["date", "action", "symbol", "quantity", "price", "fees", "currency"]
 
 _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d/%m/%y", "%d %b %Y", "%d.%m.%Y", "%m/%d/%Y"]
@@ -283,6 +286,7 @@ def compute_input_hash(user_id: int, tax_year: int) -> str:
     material = {
         "tax_year": tax_year,
         "fork": fork_version(),
+        "engine": ENGINE_VERSION,
         "docs": sorted((d["account_id"], d["sha256"]) for d in repo.list_documents(user_id)),
         "spin_offs": sorted((r["dst"], r["src"]) for r in repo.list_spin_offs(user_id)),
         "mappings": sorted(

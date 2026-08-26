@@ -62,8 +62,17 @@ def _num(value: str) -> str:
     return f"{d.normalize():f}"
 
 
-def _discrepancy(m: re.Match, raw: str) -> dict:
+def _find_refund(refunds: list[dict] | None, symbol: str, sale_date: str) -> dict | None:
+    for r in refunds or []:
+        if r.get("symbol") == symbol and r.get("sale_date") == sale_date:
+            return r
+    return None
+
+
+def _discrepancy(m: re.Match, raw: str, refunds: list[dict] | None = None) -> dict:
     y, mo, d, action, symbol, qty, price, fees, ccy, broker, supplied, calculated = m.groups()
+    sale_iso = f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+    refund = _find_refund(refunds, symbol, sale_iso)
     verb = "sale" if action == "SELL" else action.lower()
     missing = Decimal(calculated) - Decimal(supplied)
     ratio = (missing / Decimal(calculated)) if Decimal(calculated) else Decimal(0)
@@ -104,8 +113,21 @@ def _discrepancy(m: re.Match, raw: str) -> dict:
             "Open the trade details on the broker's site and check what was deducted; "
             "confirm it below with the withholding figure and the PDF."
         )
+    if refund:
+        summary += (
+            f" {broker} refunded [[{_money(refund['amount'], ccy)}]] on "
+            f"[[{_fmt_iso(refund['refund_date'])}]] ({refund['days']} days later) — "
+            "nothing to reclaim."
+        )
+        why = (
+            "Backup withholding was applied at the sale (no valid W-8BEN on file at the "
+            "time) and reversed by the broker within the same US tax year, which is the "
+            "route the rules allow. The refund is a cash adjustment only — it doesn't "
+            "change the CGT proceeds, which remain the full sale value."
+        )
+        action = None
     return {
-        "key": f"amount_adjusted__{symbol}__{int(y):04d}-{int(mo):02d}-{int(d):02d}",
+        "key": f"amount_adjusted__{symbol}__{sale_iso}",
         "data": {
             "supplied": supplied,
             "calculated": calculated,
@@ -114,11 +136,15 @@ def _discrepancy(m: re.Match, raw: str) -> dict:
             "price": price,
             "fees": fees,
         },
-        "kind": "warning",
+        "kind": "info" if refund else "warning",
         "category": "amount_adjusted",
-        "title": f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — tax withheld from proceeds"
-        if backup_withholding
-        else f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — proceeds adjusted",
+        "title": (
+            f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — tax withheld, then refunded"
+            if refund
+            else f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — tax withheld from proceeds"
+            if backup_withholding
+            else f"{symbol} {verb} on [[{_fmt_date(y, mo, d)}]] — proceeds adjusted"
+        ),
         "summary": summary,
         "occurrences": [],
         "why": why,
@@ -128,7 +154,7 @@ def _discrepancy(m: re.Match, raw: str) -> dict:
     }
 
 
-def build_notices(warnings: list[str]) -> list[dict]:
+def build_notices(warnings: list[str], refunds: list[dict] | None = None) -> list[dict]:
     notices: list[dict] = []
     bnb: dict[str, dict] = {}
     treaty: dict[str, dict] = {}
@@ -140,7 +166,7 @@ def build_notices(warnings: list[str]) -> list[dict]:
 
         m = _DISCREPANCY.search(text)
         if m:
-            notices.append(_discrepancy(m, text))
+            notices.append(_discrepancy(m, text, refunds))
             continue
 
         m = _BNB.search(text)

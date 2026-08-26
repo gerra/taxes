@@ -136,6 +136,53 @@ def run_validate(job: dict) -> dict:
     return {"ok": True, **stats, "warnings": warnings}
 
 
+def detect_withholding_refunds(transactions) -> list[dict]:
+    """Pair sales whose reported amount is short of quantity × price − fees with a
+    later positive ADJUSTMENT for the same symbol/currency and the same amount
+    (a broker refunding backup withholding). Must run BEFORE the fork's
+    convert_to_hmrc_transactions, which overwrites the sale amount."""
+    from cgt_calc.model import ActionType
+
+    refunds: list[dict] = []
+    adjustments = [
+        t
+        for t in transactions
+        if t.action == ActionType.ADJUSTMENT and t.amount is not None and t.amount > 0
+    ]
+    for sale in transactions:
+        if (
+            sale.action != ActionType.SELL
+            or sale.amount is None
+            or not sale.quantity
+            or not sale.price
+        ):
+            continue
+        missing = sale.quantity * sale.price - (sale.fees or Decimal(0)) - sale.amount
+        if missing < Decimal("0.50"):
+            continue
+        for adj in adjustments:
+            days = (adj.date - sale.date).days
+            if (
+                adj.symbol == sale.symbol
+                and adj.currency == sale.currency
+                and abs(adj.amount - missing) < Decimal("0.05")
+                and 0 <= days <= 60
+            ):
+                refunds.append(
+                    {
+                        "symbol": sale.symbol,
+                        "sale_date": sale.date.isoformat(),
+                        "refund_date": adj.date.isoformat(),
+                        "amount": str(adj.amount),
+                        "currency": sale.currency,
+                        "days": days,
+                    }
+                )
+                adjustments.remove(adj)
+                break
+    return refunds
+
+
 def run_calculate(job: dict) -> dict:
     from cgt_calc import render_latex
     from cgt_calc.args_parser import create_parser
@@ -177,6 +224,7 @@ def run_calculate(job: dict) -> dict:
     # Mirror cgt_calc.main.calculate_cgt, but keep the report object.
     isin_converter = IsinConverter(args.isin_translation_file)
     broker_transactions = BrokerRegistry.load_all_transactions(args, isin_converter)
+    refunds = detect_withholding_refunds(broker_transactions)
     currency_converter = CurrencyConverter(args.exchange_rates_file)
     price_fetcher = CurrentPriceFetcher(currency_converter)
     initial_prices = InitialPrices(args.initial_prices_file)
@@ -206,6 +254,7 @@ def run_calculate(job: dict) -> dict:
             handler.messages.append(f"PDF not rendered: {e}")
 
     bundle = serialize_report(report)
+    bundle["refunds"] = refunds
     bundle["warnings"] = handler.messages + bundle.get("warnings", [])
     bundle["meta"] = {
         "files": {k: os.path.basename(v) for k, v in job["files"].items() if v},

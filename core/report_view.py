@@ -180,7 +180,7 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "sa_boxes": sa_boxes,
         "rate_change_split": rate_change,
         "warnings": warnings,
-        "notices": notices.build_notices(warnings),
+        "notices": notices.build_notices(warnings, bundle.get("refunds")),
         "has_estimates": profile is not None,
         "tax_due": tax_due,
     }
