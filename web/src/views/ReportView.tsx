@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useConfirm } from '../components/ConfirmDialog'
 import Notices from '../components/Notices'
+import Section from '../components/Section'
 import type {
   BalanceLedgerRow,
   CalcRun,
@@ -368,37 +369,48 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
       )}
       {view.rate_change_split && <RateChangeBanner split={view.rate_change_split} />}
 
-      <h3>What goes on the return</h3>
-      <table className="sa-table">
-        <thead>
-          <tr>
-            <th>Form</th>
-            <th>Box</th>
-            <th>Figure</th>
-            <th className="num">Value</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.sa_boxes.map((b) => (
-            <SARow key={`${b.form}-${b.box}-${b.label}`} box={b} />
-          ))}
-        </tbody>
-      </table>
+      <Section
+        id="sa-boxes"
+        title="What goes on the return"
+        meta={`${view.sa_boxes.length} box${view.sa_boxes.length === 1 ? '' : 'es'}`}
+      >
+        <table className="sa-table">
+          <thead>
+            <tr>
+              <th>Form</th>
+              <th>Box</th>
+              <th>Figure</th>
+              <th className="num">Value</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.sa_boxes.map((b) => (
+              <SARow key={`${b.form}-${b.box}-${b.label}`} box={b} />
+            ))}
+          </tbody>
+        </table>
+      </Section>
 
-      <h3>
-        Disposals ({bundle.disposals.filter((d) => !d.exempt).length}
-        {bundle.disposals.some((d) => d.exempt) &&
-          ` chargeable + ${bundle.disposals.filter((d) => d.exempt).length} exempt`}
-        )
-      </h3>
-      <DisposalsTable disposals={bundle.disposals} />
+      <Section
+        id="disposals"
+        title={`Disposals (${bundle.disposals.filter((d) => !d.exempt).length}${
+          bundle.disposals.some((d) => d.exempt)
+            ? ` chargeable + ${bundle.disposals.filter((d) => d.exempt).length} exempt`
+            : ''
+        })`}
+      >
+        <DisposalsTable disposals={bundle.disposals} />
+      </Section>
 
       {view.distributions.length > 0 && <DistributionsTable rows={view.distributions} />}
 
       {bundle.dividends.length > 0 && (
-        <>
-          <h3>Dividends as the broker reported them</h3>
+        <Section
+          id="dividends-raw"
+          title="Dividends as the broker reported them"
+          meta={`${bundle.dividends.length} payment${bundle.dividends.length === 1 ? '' : 's'}`}
+        >
           <table className="sa-table">
             <thead>
               <tr>
@@ -425,12 +437,15 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
               ))}
             </tbody>
           </table>
-        </>
+        </Section>
       )}
 
       {(bundle.other_income?.length ?? 0) > 0 && (
-        <>
-          <h3>Other UK income</h3>
+        <Section
+          id="other-income"
+          title="Other UK income"
+          meta={`${bundle.other_income!.length} entr${bundle.other_income!.length === 1 ? 'y' : 'ies'}`}
+        >
           <p className="muted small">
             REIT property income distributions (under the REIT’s ticker, with the 20% tax it
             withheld) and share-lending fees (under the broker). Goes in SA100 box 17, tax in box 19
@@ -456,12 +471,17 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
               ))}
             </tbody>
           </table>
-        </>
+        </Section>
       )}
 
       {bundle.interest_by_source.length > 0 && (
-        <>
-          <h3>Interest by source</h3>
+        <Section
+          id="interest-by-source"
+          title="Interest by source"
+          meta={`${bundle.interest_by_source.length} source${
+            bundle.interest_by_source.length === 1 ? '' : 's'
+          }`}
+        >
           <table className="sa-table">
             <tbody>
               {bundle.interest_by_source.map((r, i) => (
@@ -473,12 +493,17 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
               ))}
             </tbody>
           </table>
-        </>
+        </Section>
       )}
 
       {bundle.portfolio_eoy.length > 0 && (
-        <>
-          <h3>Holdings at 5 April</h3>
+        <Section
+          id="holdings"
+          title="Holdings at 5 April"
+          meta={`${bundle.portfolio_eoy.length} position${
+            bundle.portfolio_eoy.length === 1 ? '' : 's'
+          }`}
+        >
           <table className="sa-table">
             <thead>
               <tr>
@@ -497,7 +522,7 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
               ))}
             </tbody>
           </table>
-        </>
+        </Section>
       )}
     </div>
   )
@@ -560,8 +585,7 @@ function RateChangeBanner({ split }: { split: RateChangeSplit }) {
 function DistributionsTable({ rows }: { rows: DistributionRow[] }) {
   const [open, setOpen] = useState<number | null>(null)
   return (
-    <>
-      <h3>Distributions, classified ({rows.length})</h3>
+    <Section id="distributions" title={`Distributions, classified (${rows.length})`}>
       <p className="muted small">
         What a broker labels “dividend” is not always one for UK tax. REIT property income
         distributions are property income with 20% already deducted, and distributions from funds
@@ -616,7 +640,7 @@ function DistributionsTable({ rows }: { rows: DistributionRow[] }) {
           ))}
         </tbody>
       </table>
-    </>
+    </Section>
   )
 }
 

@@ -534,6 +534,106 @@ h3 {
   margin: 28px 0 10px;
 }
 
+/* ── Collapsible sections ──────────────────────────────────────────────── */
+
+/* The whole header row is the fold's hit target: the toggle button paints an
+   overlay across `.section-head`, and `.section-actions` sits above it so its
+   own controls keep their clicks. */
+.section {
+  margin: 28px 0 0;
+}
+
+.section-head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-title {
+  margin: 0;
+}
+
+.section-title button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.section-title button::before {
+  content: '';
+  position: absolute;
+  inset: -7px -10px;
+  border-radius: 12px;
+}
+
+.section-head:hover .section-title button::before {
+  background: rgba(25, 21, 33, 0.04);
+}
+
+.section-title button:focus-visible {
+  outline: none;
+}
+
+.section-title button:focus-visible::before {
+  outline: 2px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.section-title .chev {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.section.folded .section-title .chev {
+  transform: rotate(-90deg);
+}
+
+.section-meta {
+  min-width: 0;
+}
+
+.section-actions {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-actions button.link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0.72;
+}
+
+.section-actions button.link:hover {
+  opacity: 1;
+}
+
+.section-body {
+  margin-top: 10px;
+}
+
+/* A section's first child brings its own top margin in a few places. */
+.section-body > h3:first-child,
+.section-body > p:first-child {
+  margin-top: 0;
+}
+
 .page-head {
   display: flex;
   align-items: baseline;
@@ -1201,28 +1301,6 @@ select:focus {
   border: 1px solid var(--warn-border);
 }
 
-.notices {
-  margin: 18px 0 8px;
-}
-
-.notices-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.notices-head h3 {
-  margin: 0;
-}
-
-.notices-head-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .notices-empty {
   margin: 0 0 12px;
 }
@@ -1783,17 +1861,6 @@ select:focus {
 
 .notice-more {
   margin: 0 !important;
-}
-
-.notices-head-right button.link {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  opacity: 0.72;
-}
-
-.notices-head-right button.link:hover {
-  opacity: 1;
 }
 
 /* ── Gaps: rows with actions, confirmed-empty ranges ───────────────────── */

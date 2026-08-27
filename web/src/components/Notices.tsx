@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useConfirm } from './ConfirmDialog'
+import Section from './Section'
 import type { Notice, VerificationCheck } from '../types'
 import { shortDate, taxYearLabel } from '../utils/format'
 
@@ -169,11 +170,12 @@ export default function Notices({
   if (verified.length) parts.push(`${verified.length} verified`)
 
   return (
-    <section className="notices">
-      <div className="notices-head">
-        <h3>Things to know</h3>
-        <span className="muted small">{parts.join(' · ')}</span>
-        <div className="notices-head-right">
+    <Section
+      id="notices"
+      title="Things to know"
+      meta={parts.join(' · ')}
+      actions={
+        <>
           {hidden > 0 && (
             <div className="seg" role="group" aria-label="Which tax years to show">
               <button
@@ -201,8 +203,9 @@ export default function Notices({
               text={() => shown.map(noticeText).join('\n\n')}
             />
           )}
-        </div>
-      </div>
+        </>
+      }
+    >
       {shown.length === 0 && taxYear !== undefined && (
         <p className="muted small notices-empty">
           Nothing flagged for {taxYearLabel(taxYear)} — {hidden} notice{hidden === 1 ? '' : 's'}{' '}
@@ -212,7 +215,7 @@ export default function Notices({
       {shown.map((n) => (
         <NoticeCard key={n.key} notice={n} onChange={onChange} otherYear={otherYear(n)} />
       ))}
-    </section>
+    </Section>
   )
 }
 

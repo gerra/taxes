@@ -5,7 +5,7 @@
  * tests/test_estimator_return_2024.py — regenerate it from there if the view
  * model changes, rather than hand-editing the numbers.
  */
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import { ConfirmProvider } from '../components/ConfirmDialog'
 import ReportView from '../views/ReportView'
@@ -23,7 +23,10 @@ function mockReport() {
   )
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
 
 async function renderReport() {
   mockReport()
@@ -95,8 +98,10 @@ test('without a P60 the headline is investment income and says what it excludes'
 
 test('the distributions table classifies REITs and bond funds out of dividends', async () => {
   await renderReport()
-  const table = screen.getByRole('heading', { name: /Distributions, classified/ })
-    .nextElementSibling!.nextElementSibling as HTMLTableElement
+  const table = screen
+    .getByRole('heading', { name: /Distributions, classified/ })
+    .closest('section')!
+    .querySelector('table')!
   const row = (ticker: string) => within(table).getByText(ticker).closest('tr')!.textContent ?? ''
   expect(row('LAND')).toContain('REIT PID (property income)')
   expect(row('PHP')).toContain('REIT PID (property income)')
@@ -107,4 +112,24 @@ test('the distributions table classifies REITs and bond funds out of dividends',
   // The audit columns: original currency and the HMRC rate used.
   expect(row('META')).toContain('USD')
   expect(row('META')).toContain('1.2657')
+})
+
+test('a section folds away and the choice survives a reload', async () => {
+  await renderReport()
+  const heading = () => screen.getByRole('heading', { name: /Distributions, classified/ })
+  const body = () => heading().closest('section')!.querySelector('.section-body')!
+  const toggle = () => within(heading()).getByRole('button')
+
+  expect(body()).not.toHaveAttribute('hidden')
+  expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+
+  fireEvent.click(toggle())
+  expect(body()).toHaveAttribute('hidden')
+  expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+  // The count stays readable while folded — that is the point of the meta line.
+  expect(heading().textContent).toContain('Distributions, classified (')
+
+  cleanup()
+  await renderReport()
+  expect(body()).toHaveAttribute('hidden')
 })
