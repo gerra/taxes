@@ -2047,3 +2047,68 @@ select:focus {
 .occurrences-more:hover {
   opacity: 1;
 }
+
+/* ── Employment / PAYE inputs ────────────────────────────────────────────── */
+
+.employment-row {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: #fdfaf4;
+}
+
+.employment-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+/* ── The Self Assessment bill ────────────────────────────────────────────── */
+
+.bill-headline {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.bill-subtotal {
+  margin-left: auto;
+  text-align: right;
+  line-height: 1.5;
+}
+
+.bill-total > td {
+  border-top: 2px solid var(--ink);
+  font-weight: 600;
+}
+
+.bill-explained,
+.bill-unexplained {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  margin: 12px 0 0;
+}
+
+.bill-explained {
+  background: #f0f7f0;
+  border: 1px solid #cbe3cb;
+}
+
+.bill-unexplained {
+  background: #fdf4e7;
+  border: 1px solid #ecd8b4;
+}
+
+/* A caveat inside the dark total card has to stay legible against it. */
+.total-card .warn-note {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: rgba(255, 255, 255, 0.92);
+}

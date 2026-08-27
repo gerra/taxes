@@ -161,6 +161,121 @@ def round_relief_up(amount: Decimal) -> Decimal:
     return amount.to_integral_value(rounding=ROUND_CEILING)
 
 
+# How a figure is rounded before rates are applied. HMRC is the default
+# everywhere, because matching the real bill is the point of this tool; EXACT
+# keeps the pence and is shown alongside as a secondary number.
+ROUNDING_HMRC = "hmrc"
+ROUNDING_EXACT = "exact"
+ROUNDING_MODES = (ROUNDING_HMRC, ROUNDING_EXACT)
+
+# Which way a figure rounds under HMRC's rules — both directions favour the
+# taxpayer, so it depends on whether the figure increases or decreases the bill.
+DOWN_KINDS = frozenset({"income", "gain"})
+UP_KINDS = frozenset({"loss", "relief"})
+
+
+def round_for_tax(amount, kind: str, mode: str = ROUNDING_HMRC) -> Decimal:
+    """The one place a figure is rounded before tax rates touch it.
+
+    HMRC's calculation takes each income source and each gain DOWN to the whole
+    pound and each loss and relief UP, then works to the penny from there — so
+    two figures a penny apart can produce bills a pound apart, and matching the
+    real bill means rounding the same way. `kind` says which direction this
+    figure goes: "income"/"gain" down, "loss"/"relief" up.
+
+    mode=ROUNDING_EXACT keeps every penny instead. It is never what HMRC will
+    charge; it exists so the report can show what the bill would be without the
+    rounding, which is the honest way to present a figure that moved because of
+    it. Tax amounts themselves are never rounded here — they stay to the penny
+    in both modes.
+
+    Capital gains are not routed through the mode: `cgt_for_year` rounds them
+    the HMRC way unconditionally, because those same figures fill the whole-pound
+    SA108 boxes and a pence-precise gain would not match the return."""
+    if kind in DOWN_KINDS:
+        rounder = round_gain_down
+    elif kind in UP_KINDS:
+        rounder = round_relief_up
+    else:
+        raise ValueError(f"Unknown rounding kind {kind!r}")
+    value = dec(amount)
+    if mode == ROUNDING_EXACT:
+        return value
+    if mode != ROUNDING_HMRC:
+        raise ValueError(f"Unknown rounding mode {mode!r}")
+    return rounder(value)
+
+
+# ── Band stacking ─────────────────────────────────────────────────────────────
+#
+# Income tax is charged in slices: the taxable income already stacked below a
+# figure decides which band the figure itself lands in. Both the full Self
+# Assessment computation and the PAYE re-run share this, so a bill and the PAYE
+# it is compared against can never disagree about where a band boundary is.
+
+BASIC = "basic"
+HIGHER = "higher"
+ADDITIONAL = "additional"
+
+
+def band_slices(
+    amount: Decimal,
+    floor: Decimal,
+    *,
+    basic_limit: Decimal,
+    higher_limit: Decimal,
+    rates: dict,
+) -> tuple[list[dict], Decimal]:
+    """Charge `amount` of taxable income sitting on top of `floor` already used.
+
+    `basic_limit` and `higher_limit` are measured in taxable income — income
+    after allowances — not in gross pay: ITA 2007 s10 charges the basic rate up
+    to the basic rate limit and the higher rate up to the higher rate limit,
+    both applied to what is left once the personal allowance has come off. When
+    the allowance has been tapered to nil those limits do not move down with it.
+
+    Returns (slices, new floor). Each slice carries the amount, the rate and the
+    tax, kept to the penny."""
+    slices: list[dict] = []
+    cursor = dec(floor)
+    remaining = dec(amount)
+    for top, band in ((dec(basic_limit), BASIC), (dec(higher_limit), HIGHER), (None, ADDITIONAL)):
+        if remaining <= ZERO:
+            break
+        room = remaining if top is None else max(ZERO, min(remaining, top - cursor))
+        if room > ZERO:
+            rate = dec(rates[band])
+            slices.append({"band": band, "amount": room, "rate": rate, "tax": room * rate})
+            cursor += room
+            remaining -= room
+    return slices, cursor
+
+
+def slices_tax(slices: list[dict]) -> Decimal:
+    return sum((s["tax"] for s in slices), ZERO)
+
+
+def band_at(floor: Decimal, basic_limit: Decimal, higher_limit: Decimal) -> str:
+    """Which band the next pound stacked on `floor` falls into."""
+    if floor < dec(basic_limit):
+        return BASIC
+    return HIGHER if floor < dec(higher_limit) else ADDITIONAL
+
+
+def taper_allowance(
+    personal_allowance: Decimal, taper_start: Decimal, adjusted_net_income: Decimal
+) -> Decimal:
+    """The personal allowance after the ITA 2007 s35(2)-(3) taper: £1 less for
+    every £2 of adjusted net income above the threshold, nil once the allowance
+    is used up (£125,140 while the allowance is £12,570 and the threshold
+    £100,000)."""
+    pa = dec(personal_allowance)
+    over = dec(adjusted_net_income) - dec(taper_start)
+    if over <= ZERO:
+        return pa
+    return max(ZERO, pa - over / 2)
+
+
 def _fmt_date(iso: str) -> str:
     return date.fromisoformat(iso).strftime("%-d %b %Y")
 

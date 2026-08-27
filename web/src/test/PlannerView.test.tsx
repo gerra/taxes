@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { PlannerData, Tip } from '../types'
+import { emptySelfAssessment } from './fixtures/self-assessment'
 import PlannerView from '../views/PlannerView'
 
 const tip = (over: Partial<Tip>): Tip => ({
@@ -45,7 +46,9 @@ const planner: PlannerData = {
       sa_cgt_at_pre_oct_rates: 0,
       cgt_adjustment: 0,
       cgt_note: null,
-      total_sa: 0,
+      investment_only: 0,
+      sa_bill: 0,
+      reconciled: false,
     },
     cgt: {
       total_gain: 0,
@@ -70,6 +73,7 @@ const planner: PlannerData = {
       each_instalment: 0,
       explain: 'Neither instalment applies.',
     },
+    self_assessment: emptySelfAssessment(),
     marginal: { income_rate: 0.4, effective_rate: 0.4 },
   },
   tips: [
