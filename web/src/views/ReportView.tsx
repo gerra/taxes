@@ -663,12 +663,76 @@ function PaymentsOnAccountNote({ taxDue }: { taxDue: TaxDue }) {
   )
 }
 
-/** The bill: what the return will actually ask for. */
-function SelfAssessmentCard({ taxDue, deadline }: { taxDue: TaxDue; deadline: string }) {
+/** Tax on the investment figures on this page, by source.
+ *
+ * One component, two homes: it is the headline breakdown when there is no P60
+ * and investments are all we can price, and the inset drill-down under the
+ * "Investment income" line when the whole bill is reconciled. The amounts come
+ * from the same computation as the bill, so the two agree to the penny —
+ * including HMRC's rounding of each income source. */
+function InvestmentBreakdown({ taxDue, cgtDetail }: { taxDue: TaxDue; cgtDetail: string }) {
+  const parts = taxDue.self_assessment?.investment_only_parts
+  return (
+    <div className="total-breakdown investment-breakdown">
+      <div>
+        Capital gains
+        <b>{gbp(parts?.cgt ?? taxDue.cgt)}</b>
+        {cgtDetail}
+      </div>
+      <div>
+        Dividends
+        <b>{gbp(parts?.dividends ?? taxDue.dividends)}</b>
+        {(taxDue.ftcr ?? 0) > 0
+          ? `${gbp(taxDue.dividends_before_ftcr)} after ${gbp(taxDue.dividend_allowance, 0)} allowance, less ${gbp(taxDue.ftcr)} foreign tax credit`
+          : `after ${gbp(taxDue.dividend_allowance, 0)} allowance`}
+      </div>
+      <div>
+        Interest
+        <b>{gbp(parts?.interest ?? taxDue.interest)}</b>
+        after {gbp(taxDue.psa, 0)} savings allowance
+      </div>
+      {(parts?.other_income ?? taxDue.other_income ?? 0) !== 0 && (
+        <div>
+          Other UK income
+          <b>{gbp(parts?.other_income ?? taxDue.other_income)}</b>
+          at your marginal rate, less tax already withheld
+        </div>
+      )}
+      {(parts?.tax_paid_on_gains ?? 0) > 0 && (
+        <div>
+          Already paid on gains
+          <b>{gbp(-(parts?.tax_paid_on_gains ?? 0))}</b>
+          through HMRC&rsquo;s real-time capital gains service
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The bill: what the return will actually ask for, and — once PAYE has been
+ * reconciled — the investment slice of it, inset rather than set beside it.
+ *
+ * There is one card because there is one bill. The headline breakdown is the
+ * equation the bill is built from (PAYE catch-up + investment income, less
+ * anything already paid on account); the inset panel expands the investment
+ * term of it. Two peer cards read as two answers to the same question, and
+ * repeated the investment figures at headline size when they were often the
+ * smaller half — or, with no P60 entered, the very same number twice. */
+function SelfAssessmentCard({
+  taxDue,
+  deadline,
+  cgtDetail,
+}: {
+  taxDue: TaxDue
+  deadline: string
+  cgtDetail: string
+}) {
   const sa = taxDue.self_assessment
   if (!sa) return null
   const year = taxYearLabel(sa.tax_year)
-  const rows = sa.rows.filter((r) => !r.total && (r.included || r.amount !== 0))
+  const employment = sa.rows.find((r) => r.key === 'employment')
+  const paidOnAccount = sa.already_paid?.payments_on_account_made ?? 0
+  const paidRow = sa.rows.find((r) => r.key === 'already_paid')
   return (
     <div className="total-card">
       <div>
@@ -680,20 +744,50 @@ function SelfAssessmentCard({ taxDue, deadline }: { taxDue: TaxDue; deadline: st
         <div className="stat-value">{gbp(sa.reconciled ? sa.sa_bill : sa.investment_only)}</div>
         <div className="muted small">due {shortDate(sa.due_date || deadline)}</div>
       </div>
-      <div className="total-breakdown">
-        {rows.map((r) => (
-          <div key={r.key} title={r.explain}>
-            {r.label}
-            <b>{gbp(r.amount)}</b>
-            {r.key === 'employment' && !sa.reconciled ? 'not checked — no P60 entered' : ''}
+      {sa.reconciled ? (
+        // The bill as an equation: PAYE catch-up plus investments, less
+        // anything paid on account. It sums to the headline exactly.
+        <div className="total-breakdown">
+          {employment && (
+            <div title={employment.explain}>
+              {employment.label}
+              <b>{gbp(employment.amount)}</b>
+              what your tax code got wrong on your salary
+            </div>
+          )}
+          <div>
+            Investment income
+            <b>{gbp(sa.investment_only)}</b>
+            gains, dividends and interest — by source below
           </div>
-        ))}
-      </div>
-      {sa.reconciled && (
+          {paidOnAccount !== 0 && (
+            <div title={paidRow?.explain}>
+              Paid on account
+              <b>{gbp(-paidOnAccount)}</b>
+              instalments already made for this year
+            </div>
+          )}
+        </div>
+      ) : (
+        <InvestmentBreakdown taxDue={taxDue} cgtDetail={cgtDetail} />
+      )}
+      {sa.reconciled ? (
+        <div className="of-which">
+          <div className="of-which-title">Of that, tax on investment income, by source</div>
+          <InvestmentBreakdown taxDue={taxDue} cgtDetail={cgtDetail} />
+          <div className="of-which-note">
+            At your {taxDue.marginal_band}-rate position (personal allowance{' '}
+            {gbp(taxDue.personal_allowance, 0)}). The rest of the bill is PAYE catch-up on your
+            salary, collected through the return because your tax code did not collect it during the
+            year.
+            {taxDue.cgt_note ? ` ${taxDue.cgt_note}` : ''}
+          </div>
+        </div>
+      ) : (
         <div className="total-note">
-          <b>Investment income alone: {gbp(sa.investment_only)}</b> — the difference is PAYE
-          catch-up on your salary, collected through the return because your tax code did not
-          collect it during the year.
+          On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
+          allowance {gbp(taxDue.personal_allowance, 0)}).{' '}
+          {taxDue.cgt_note ? `${taxDue.cgt_note} ` : ''}Due {shortDate(deadline)}.
         </div>
       )}
       {!sa.reconciled && (
@@ -712,11 +806,12 @@ function SelfAssessmentCard({ taxDue, deadline }: { taxDue: TaxDue; deadline: st
           {w}
         </div>
       ))}
+      <PaymentsOnAccountNote taxDue={taxDue} />
     </div>
   )
 }
 
-/** The headline bill, then the investment-income detail behind its sub-total. */
+/** The headline bill, with the investment-income detail inset behind it. */
 function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline: string }) {
   if (!taxDue?.available) {
     return (
@@ -746,78 +841,7 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           .filter(Boolean)
           .join(' + ')
       : 'within exempt amount'
-  return (
-    <>
-      <SelfAssessmentCard taxDue={taxDue} deadline={deadline} />
-      <InvestmentTaxCard taxDue={taxDue} deadline={deadline} cgtDetail={cgtDetail} />
-    </>
-  )
-}
-
-/** What the investment figures on this page cost: the sub-total behind the
- * "Investment income alone" line on the bill above, broken out by source. */
-function InvestmentTaxCard({
-  taxDue,
-  deadline,
-  cgtDetail,
-}: {
-  taxDue: TaxDue
-  deadline: string
-  cgtDetail: string
-}) {
-  // Amounts come from the same computation as the bill above, so the two agree
-  // to the penny — including HMRC's rounding of each income source, which the
-  // whole-bill figures apply and a separately-computed card would not.
-  const parts = taxDue.self_assessment?.investment_only_parts
-  const total = taxDue.self_assessment?.investment_only ?? taxDue.total
-  return (
-    <div className="total-card investment-card">
-      <div>
-        <div className="stat-title">Of that, tax on investment income</div>
-        <div className="stat-value">{gbp(total)}</div>
-      </div>
-      <div className="total-breakdown">
-        <div>
-          Capital gains
-          <b>{gbp(parts?.cgt ?? taxDue.cgt)}</b>
-          {cgtDetail}
-        </div>
-        <div>
-          Dividends
-          <b>{gbp(parts?.dividends ?? taxDue.dividends)}</b>
-          {(taxDue.ftcr ?? 0) > 0
-            ? `${gbp(taxDue.dividends_before_ftcr)} after ${gbp(taxDue.dividend_allowance, 0)} allowance, less ${gbp(taxDue.ftcr)} foreign tax credit`
-            : `after ${gbp(taxDue.dividend_allowance, 0)} allowance`}
-        </div>
-        <div>
-          Interest
-          <b>{gbp(parts?.interest ?? taxDue.interest)}</b>
-          after {gbp(taxDue.psa, 0)} savings allowance
-        </div>
-        {(parts?.other_income ?? taxDue.other_income ?? 0) !== 0 && (
-          <div>
-            Other UK income
-            <b>{gbp(parts?.other_income ?? taxDue.other_income)}</b>
-            at your marginal rate, less tax already withheld
-          </div>
-        )}
-        {(parts?.tax_paid_on_gains ?? 0) > 0 && (
-          <div>
-            Already paid on gains
-            <b>{gbp(-(parts?.tax_paid_on_gains ?? 0))}</b>
-            through HMRC&rsquo;s real-time capital gains service
-          </div>
-        )}
-      </div>
-      {taxDue.cgt_note && <div className="total-note">{taxDue.cgt_note}</div>}
-      <div className="total-note">
-        On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
-        allowance {gbp(taxDue.personal_allowance, 0)}). It excludes any PAYE under- or
-        over-collection on your salary — that sits in the bill above. Due {shortDate(deadline)}.
-      </div>
-      <PaymentsOnAccountNote taxDue={taxDue} />
-    </div>
-  )
+  return <SelfAssessmentCard taxDue={taxDue} deadline={deadline} cgtDetail={cgtDetail} />
 }
 
 function StatCard({

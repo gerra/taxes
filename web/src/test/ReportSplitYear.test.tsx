@@ -52,9 +52,9 @@ test('the rate-change banner says a box 51 adjustment is needed and how much', a
 
 test('capital gains are shown at both rates, not one', async () => {
   await renderReport()
-  // The bill card also has a "Capital gains" row; the rate split lives on the
-  // investment-income card behind it.
-  const row = [...document.querySelectorAll('.investment-card .total-breakdown > div')].find((d) =>
+  // The rate split lives on the by-source investment breakdown, which with no
+  // P60 is the bill card's own headline breakdown.
+  const row = [...document.querySelectorAll('.investment-breakdown > div')].find((d) =>
     d.textContent?.startsWith('Capital gains'),
   )!
   expect(row.textContent).toContain('@ 20%')
