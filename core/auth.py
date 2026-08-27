@@ -112,6 +112,10 @@ def google_auth_url(state: str) -> str:
         "scope": "openid email profile",
         "state": state,
         "access_type": "online",
+        # Always show Google's account chooser, even when the browser already
+        # has a live Google session: signing out here must let you come back as
+        # somebody else, and a silent auto-redirect looks like no auth at all.
+        "prompt": "select_account",
     }
     return _GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params)
 

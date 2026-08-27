@@ -60,8 +60,16 @@ def google_callback():
 
 @bp.get("/logout")
 def logout():
+    """Drop every trace of the session this browser holds: the auth cookie, the
+    access-request cookie a rejected visitor may still carry, and the Flask
+    session holding the OAuth state. Google's own session is untouched (signing
+    someone out of Gmail is not ours to do) — but /oauth/google/start asks for
+    the account chooser, so the next sign-in can be a different person.
+    """
+    session.clear()
     resp = redirect("/")
     resp.delete_cookie(auth.COOKIE_NAME)
+    resp.delete_cookie(auth.ACCESS_COOKIE_NAME)
     return resp
 
 
