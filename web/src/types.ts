@@ -198,10 +198,72 @@ export interface Dividend {
   /** ISIN country code of the payer; GB = UK dividend, else foreign. */
   country?: string | null
   isin?: string | null
+  /** The payment before conversion, and the HMRC monthly rate used. */
+  currency?: string | null
+  gross?: string | null
+  fx_rate?: string | null
   amount_gbp: string
   tax_at_source_gbp: string
   is_interest: boolean
   treaty: { country: string; relief_gbp: string } | null
+}
+
+/** How a distribution is taxed once classified, whatever the broker called it. */
+export type DistributionKind =
+  | 'uk_dividend'
+  | 'foreign_dividend'
+  | 'property_income_distribution'
+  | 'interest_distribution'
+  | 'uk_interest'
+  | 'foreign_interest'
+  | 'share_lending_fee'
+  | 'eri_dividend'
+  | 'eri_interest'
+
+export interface DistributionRow {
+  date: string
+  symbol: string | null
+  source: string | null
+  kind: DistributionKind
+  label: string
+  taxed_as: 'dividend' | 'savings' | 'property' | 'misc'
+  uses_dividend_allowance: boolean
+  currency: string | null
+  gross: string | null
+  fx_rate: string | null
+  gross_gbp: number
+  withheld_gbp: number
+  treaty_relief_gbp: number
+  why: string
+}
+
+export interface PaymentsOnAccount {
+  required: boolean
+  threshold: number
+  liability_excluding_cgt: number
+  over_threshold: boolean
+  tax_collected_at_source: number
+  percent_at_source: number
+  under_80_percent_at_source: boolean
+  each_instalment: number
+  explain: string
+}
+
+/** The mid-year CGT rate change and the box 51 adjustment it forces. */
+export interface RateChangeSplit {
+  before: number
+  after: number
+  date: string
+  rates_before: { basic: number; higher: number }
+  rates_after: { basic: number; higher: number }
+  has_pre_change_disposals: boolean
+  needs_box_51_adjustment: boolean
+  cgt_adjustment: number
+  sa_cgt_at_pre_oct_rates: number
+  cgt_total: number
+  /** True when no planner income was available to place the gains in the bands. */
+  estimated: boolean
+  note: string
 }
 
 export interface InterestRow {
@@ -302,7 +364,9 @@ export interface ReportView {
     other_income: { value: number; tax_taken_off: number; estimated_tax: number | null }
   }
   sa_boxes: SABox[]
-  rate_change_split: { before: number; after: number; date: string } | null
+  distributions: DistributionRow[]
+  distribution_totals: Record<string, number>
+  rate_change_split: RateChangeSplit | null
   exempt_disposals: {
     count: number
     tbill_count: number
@@ -316,13 +380,37 @@ export interface ReportView {
   tax_due: TaxDue
 }
 
+export interface CgtBucket {
+  key: string
+  label: string
+  gain: number
+  relief: number
+  net: number
+  rounded: number
+  at_basic: number
+  at_higher: number
+  basic_rate: number
+  higher_rate: number
+  tax: number
+}
+
 export interface TaxDue {
   available: boolean
   total?: number
+  /** The bill without capital gains tax — what the payments-on-account test uses. */
+  excluding_cgt?: number
   cgt?: number
+  cgt_sa_at_pre_oct_rates?: number
+  cgt_adjustment?: number
+  cgt_note?: string | null
+  cgt_buckets?: CgtBucket[]
   dividends?: number
+  dividends_before_ftcr?: number
+  ftcr?: number
+  foreign_tax_withheld?: number
   interest?: number
   other_income?: number
+  payments_on_account?: PaymentsOnAccount
   marginal_band?: string
   personal_allowance?: number
   psa?: number
@@ -381,14 +469,37 @@ export interface PlannerData {
       income_tax_total: number
       savings_tax: number
       dividend_tax: number
+      dividend_tax_before_ftcr: number
+      ftcr: number
+      /** Same as cgt_total; kept for callers that predate the rate split. */
       cgt_estimate: number
+      cgt_total: number
+      /** What the SA return's own calculation produces (pre-30-Oct rates). */
+      sa_cgt_at_pre_oct_rates: number
+      /** SA108 box 51: the extra due on post-30-Oct disposals. */
+      cgt_adjustment: number
       cgt_note: string | null
+      total_sa: number
     }
+    cgt: {
+      total_gain: number
+      taxable_gain: number
+      cgt_total: number
+      sa_cgt_at_pre_oct_rates: number
+      cgt_adjustment: number
+      split_applies: boolean
+      dates_known: boolean
+      needs_box_51_adjustment: boolean
+      adjustment_note: string | null
+      buckets: CgtBucket[]
+    }
+    payments_on_account: PaymentsOnAccount
     marginal: { income_rate: number; effective_rate: number }
   }
   tips: Tip[]
   filing_deadline: string
   year: {
+    cgt_mid_year_change?: { date: string; rates_before: { basic: number; higher: number } }
     personal_allowance: number
     pa_taper_start: number
     basic_band: number

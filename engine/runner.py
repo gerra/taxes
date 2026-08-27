@@ -14,7 +14,7 @@ import uuid
 from collections import Counter
 from datetime import date, datetime
 
-from core import crypto, paths, repo
+from core import crypto, estimator, paths, repo
 
 _log = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER_TIMEOUT = 240  # seconds; below gunicorn's 300s
 
 # Bump when the worker/bundle shape changes so cached runs are recomputed.
-ENGINE_VERSION = 3
+ENGINE_VERSION = 4
 
 RAW_HEADER = ["date", "action", "symbol", "quantity", "price", "fees", "currency"]
 
@@ -317,6 +317,7 @@ def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) 
         "docs": sorted((d["account_id"], d["sha256"]) for d in repo.list_documents(user_id)),
         "spin_offs": sorted((r["dst"], r["src"]) for r in repo.list_spin_offs(user_id)),
         "exempt": sorted(r["name"] for r in repo.list_exempt_securities(user_id)),
+        "interest_funds": sorted(estimator.KNOWN_INTEREST_FUNDS),
         "mappings": sorted(
             (a["id"], json.dumps(repo.get_column_mapping(a["id"]), sort_keys=True))
             for a in repo.list_accounts(user_id)
@@ -397,6 +398,10 @@ def run_calculation(
             # Gilts/T-bills the worker also detects by name; this list is the
             # user's additions (ticker or ISIN) for anything it cannot see.
             "exempt_securities": [r["name"] for r in repo.list_exempt_securities(user_id)],
+            # Funds whose distributions are interest, not dividends (the >60%
+            # bond test). Curated in core.estimator; the report flags offshore
+            # funds that are not on it so the status can be checked by hand.
+            "interest_fund_tickers": sorted(estimator.KNOWN_INTEREST_FUNDS),
             "exchange_rates_file": paths.EXCHANGE_RATES_FILE,
             "isin_translation_file": os.path.join(paths.CACHE_DIR, "isin_translation.csv"),
             "work_dir": work_dir,

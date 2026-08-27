@@ -31,6 +31,7 @@ YEARS: dict[int, dict] = {
         "cgt_allowance": 12300,
         "dividend_allowance": 2000,
         "cgt_rates_shares": {"basic": 0.10, "higher": 0.20},
+        "cgt_rates_residential": {"basic": 0.18, "higher": 0.28},
         "pension_aa": 40000,
         "pension_taper_adjusted_income": 240000,
         "pension_aa_min": 4000,
@@ -40,6 +41,7 @@ YEARS: dict[int, dict] = {
         "cgt_allowance": 6000,
         "dividend_allowance": 1000,
         "cgt_rates_shares": {"basic": 0.10, "higher": 0.20},
+        "cgt_rates_residential": {"basic": 0.18, "higher": 0.28},
     },
     2024: {
         **_COMMON,
@@ -48,6 +50,9 @@ YEARS: dict[int, dict] = {
         # Rates changed mid-year at Autumn Budget 2024: disposals before
         # 30 Oct 2024 at 10%/20%, on or after at 18%/24%.
         "cgt_rates_shares": {"basic": 0.18, "higher": 0.24},
+        # Residential property was already 18%/24% from 6 Apr 2024, so it does
+        # not move on 30 October and stays in its own bucket all year.
+        "cgt_rates_residential": {"basic": 0.18, "higher": 0.24},
         "cgt_mid_year_change": {
             "date": "2024-10-30",
             "rates_before": {"basic": 0.10, "higher": 0.20},
@@ -58,12 +63,14 @@ YEARS: dict[int, dict] = {
         "cgt_allowance": 3000,
         "dividend_allowance": 500,
         "cgt_rates_shares": {"basic": 0.18, "higher": 0.24},
+        "cgt_rates_residential": {"basic": 0.18, "higher": 0.24},
     },
     2026: {
         **_COMMON,
         "cgt_allowance": 3000,
         "dividend_allowance": 500,
         "cgt_rates_shares": {"basic": 0.18, "higher": 0.24},
+        "cgt_rates_residential": {"basic": 0.18, "higher": 0.24},
     },
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useConfirm } from '../components/ConfirmDialog'
 import Notices from '../components/Notices'
@@ -6,7 +6,9 @@ import type {
   BalanceLedgerRow,
   CalcRun,
   DisposalEvent,
+  DistributionRow,
   ErrorTransaction,
+  RateChangeSplit,
   Report,
   TaxDue,
 } from '../types'
@@ -364,14 +366,7 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
           {view.exempt_disposals.explain}
         </div>
       )}
-      {view.rate_change_split && (
-        <div className="banner info">
-          CGT rates changed on {shortDate(view.rate_change_split.date)}: gains before that date{' '}
-          {gbp(view.rate_change_split.before)} (10%/20%), on or after{' '}
-          {gbp(view.rate_change_split.after)} (18%/24%). HMRC’s return has an adjustment box for
-          this — the computation PDF shows each disposal date.
-        </div>
-      )}
+      {view.rate_change_split && <RateChangeBanner split={view.rate_change_split} />}
 
       <h3>What goes on the return</h3>
       <table className="sa-table">
@@ -399,9 +394,11 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
       </h3>
       <DisposalsTable disposals={bundle.disposals} />
 
+      {view.distributions.length > 0 && <DistributionsTable rows={view.distributions} />}
+
       {bundle.dividends.length > 0 && (
         <>
-          <h3>Dividends</h3>
+          <h3>Dividends as the broker reported them</h3>
           <table className="sa-table">
             <thead>
               <tr>
@@ -506,6 +503,152 @@ function ReportBody({ report, onChange }: { report: Report; onChange: () => void
   )
 }
 
+const KIND_LABEL: Record<DistributionRow['kind'], string> = {
+  uk_dividend: 'UK dividend',
+  foreign_dividend: 'Foreign dividend',
+  property_income_distribution: 'REIT PID (property income)',
+  interest_distribution: 'Bond fund interest',
+  uk_interest: 'UK interest',
+  foreign_interest: 'Foreign interest',
+  share_lending_fee: 'Share-lending fee',
+  eri_dividend: 'Excess reported income (dividend)',
+  eri_interest: 'Excess reported income (interest)',
+}
+
+const TAXED_AS_LABEL: Record<DistributionRow['taxed_as'], string> = {
+  dividend: 'dividend rates',
+  savings: 'savings rates',
+  property: 'income tax rates',
+  misc: 'income tax rates',
+}
+
+/** The 2024/25 mid-year rate change: what it costs and where it goes on the form. */
+function RateChangeBanner({ split }: { split: RateChangeSplit }) {
+  const kind = split.needs_box_51_adjustment ? 'warn' : 'info'
+  return (
+    <div className={`banner ${kind}`}>
+      <b>
+        CGT rates changed on {shortDate(split.date)}: {gbp(split.before)} of gains before that date
+        ({pct(split.rates_before.basic)}/{pct(split.rates_before.higher)}), {gbp(split.after)} on or
+        after ({pct(split.rates_after.basic)}/{pct(split.rates_after.higher)}).
+      </b>{' '}
+      {split.note}
+      {split.needs_box_51_adjustment && (
+        <div className="total-breakdown">
+          <div>
+            The return calculates
+            <b>{gbp(split.sa_cgt_at_pre_oct_rates)}</b>
+            whole year at the pre-change rates
+          </div>
+          <div>
+            SA108 box 51 adjustment
+            <b>{gbp(split.cgt_adjustment)}</b>
+            enter this by hand{split.estimated ? ', estimated' : ''}
+          </div>
+          <div>
+            Actually due
+            <b>{gbp(split.cgt_total)}</b>
+            what you should pay
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Every distribution, classified before it is taxed — the hand-audit table. */
+function DistributionsTable({ rows }: { rows: DistributionRow[] }) {
+  const [open, setOpen] = useState<number | null>(null)
+  return (
+    <>
+      <h3>Distributions, classified ({rows.length})</h3>
+      <p className="muted small">
+        What a broker labels “dividend” is not always one for UK tax. REIT property income
+        distributions are property income with 20% already deducted, and distributions from funds
+        holding more than 60% interest-bearing assets are interest. Neither uses the dividend
+        allowance. Click a row for the reasoning.
+      </p>
+      <table className="sa-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Ticker</th>
+            <th>Classified as</th>
+            <th className="num">Gross</th>
+            <th className="num">FX rate</th>
+            <th className="num">GBP</th>
+            <th className="num">Withheld</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <Fragment key={i}>
+              <tr className="sa-row" onClick={() => setOpen(open === i ? null : i)}>
+                <td>{shortDate(r.date)}</td>
+                <td>{r.symbol ?? r.source ?? '—'}</td>
+                <td>{KIND_LABEL[r.kind]}</td>
+                <td className="num">
+                  {r.gross ? `${num(r.gross)} ${r.currency ?? ''}`.trim() : (r.currency ?? '—')}
+                </td>
+                <td className="num">{r.fx_rate ? num(r.fx_rate, 4) : '—'}</td>
+                <td className="num">
+                  <b>{gbp(r.gross_gbp)}</b>
+                </td>
+                <td className="num">{r.withheld_gbp > 0 ? gbp(r.withheld_gbp) : '—'}</td>
+              </tr>
+              {open === i && (
+                <tr className="sa-explain">
+                  <td colSpan={7}>
+                    <div>
+                      Taxed at {TAXED_AS_LABEL[r.taxed_as]};{' '}
+                      {r.uses_dividend_allowance
+                        ? 'uses the dividend allowance'
+                        : 'does not use the dividend allowance'}
+                      .{' '}
+                      {r.treaty_relief_gbp > 0 &&
+                        `${gbp(r.treaty_relief_gbp)} is creditable as Foreign Tax Credit Relief. `}
+                      {r.why}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+/** Both payments-on-account conditions, shown whichever way they come out. */
+function PaymentsOnAccountNote({ taxDue }: { taxDue: TaxDue }) {
+  const poa = taxDue.payments_on_account
+  if (!poa) return null
+  const mark = (ok: boolean) => (ok ? '✓' : '✗')
+  return (
+    <div className="total-note">
+      <b>
+        Payments on account:{' '}
+        {poa.required ? `${gbp(poa.each_instalment)} on 31 Jan and again on 31 Jul` : 'none due'}
+      </b>
+      <div className="total-breakdown">
+        <div>
+          {mark(poa.over_threshold)} Balancing payment over {gbp(poa.threshold, 0)}
+          <b>{gbp(poa.liability_excluding_cgt)}</b>
+          capital gains tax excluded
+        </div>
+        <div>
+          {mark(poa.under_80_percent_at_source)} Under 80% collected at source
+          <b>{poa.percent_at_source.toFixed(1)}%</b>
+          PAYE and tax already withheld
+        </div>
+      </div>
+      Capital gains tax is never part of a payment on account, so the {gbp(taxDue.total)} headline
+      above is not the figure this test looks at.
+    </div>
+  )
+}
+
 function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline: string }) {
   if (!taxDue?.available) {
     return (
@@ -521,15 +664,19 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
       </div>
     )
   }
-  const rates = taxDue.cgt_rates
+  // Each rate bucket the gains actually fell into — in 2024/25 that is one
+  // slice either side of 30 October, at different rates.
+  const buckets = (taxDue.cgt_buckets ?? []).filter((b) => b.rounded > 0)
   const cgtDetail =
-    rates && (taxDue.cgt_at_basic ?? 0) > 0 && (taxDue.cgt_at_higher ?? 0) > 0
-      ? `${gbp(taxDue.cgt_at_basic, 0)} @ ${pct(rates.basic)} + ${gbp(taxDue.cgt_at_higher, 0)} @ ${pct(rates.higher)}`
-      : rates && (taxDue.cgt_at_higher ?? 0) > 0
-        ? `@ ${pct(rates.higher)}`
-        : rates && (taxDue.cgt_at_basic ?? 0) > 0
-          ? `@ ${pct(rates.basic)}`
-          : 'within exempt amount'
+    buckets.length > 0
+      ? buckets
+          .flatMap((b) => [
+            b.at_basic > 0 ? `${gbp(b.at_basic, 0)} @ ${pct(b.basic_rate)}` : null,
+            b.at_higher > 0 ? `${gbp(b.at_higher, 0)} @ ${pct(b.higher_rate)}` : null,
+          ])
+          .filter(Boolean)
+          .join(' + ')
+      : 'within exempt amount'
   return (
     <div className="total-card">
       <div>
@@ -545,7 +692,9 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
         <div>
           Dividends
           <b>{gbp(taxDue.dividends)}</b>
-          after {gbp(taxDue.dividend_allowance, 0)} allowance
+          {(taxDue.ftcr ?? 0) > 0
+            ? `${gbp(taxDue.dividends_before_ftcr)} after ${gbp(taxDue.dividend_allowance, 0)} allowance, less ${gbp(taxDue.ftcr)} foreign tax credit`
+            : `after ${gbp(taxDue.dividend_allowance, 0)} allowance`}
         </div>
         <div>
           Interest
@@ -560,12 +709,13 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           </div>
         )}
       </div>
+      {taxDue.cgt_note && <div className="total-note">{taxDue.cgt_note}</div>}
       <div className="total-note">
         On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
         allowance {gbp(taxDue.personal_allowance, 0)}). Employment tax is already collected via
-        PAYE. If this exceeds £1,000, HMRC will also ask for payments on account towards next year
-        (excluding the CGT part). Due {shortDate(deadline)}.
+        PAYE. Due {shortDate(deadline)}.
       </div>
+      <PaymentsOnAccountNote taxDue={taxDue} />
     </div>
   )
 }

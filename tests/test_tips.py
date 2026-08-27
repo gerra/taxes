@@ -166,3 +166,26 @@ def test_expiring_and_lost_sort_above_plain_opportunities():
     )
     order = [t["status"] for t in tips]
     assert order == sorted(order, key=lambda s: {"expiring": 0, "lost": 1}.get(s, 2))
+
+
+def test_no_payments_on_account_from_a_big_capital_gain_alone():
+    """CGT is never part of a payment on account: a £40k gain on top of a fully
+    PAYE'd salary leaves nothing to pay in advance."""
+    tips = build_tips(
+        _ctx({"employment_income": 332000}, {"taxable_gain": 40000, "uk_interest": 5.28})
+    )
+    assert _get(tips, "payments_on_account") is None
+
+
+def test_payments_on_account_when_untaxed_income_is_over_the_threshold():
+    tips = build_tips(_ctx({"employment_income": 60000, "other_interest": 30000}))
+    tip = _get(tips, "payments_on_account")
+    assert tip is not None
+    assert "80%" in tip["why"]
+
+
+def test_no_payments_on_account_when_most_tax_came_from_paye():
+    """Over £1,000 of untaxed income tax, but PAYE already covered 80%+."""
+    tips = build_tips(_ctx({"employment_income": 332000, "other_interest": 4000}))
+    tip = _get(tips, "payments_on_account")
+    assert tip is None

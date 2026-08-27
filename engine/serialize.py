@@ -7,7 +7,7 @@ them. schema_version guards consumers against shape changes on fork upgrades.
 from collections import defaultdict
 from decimal import Decimal
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _d(value) -> str | None:
@@ -30,10 +30,16 @@ def _entry(e) -> dict:
     }
 
 
-def serialize_report(report, symbol_isins: dict | None = None) -> dict:
+def serialize_report(
+    report, symbol_isins: dict | None = None, dividend_meta: dict | None = None
+) -> dict:
+    """dividend_meta: {(date ISO, symbol): {currency, gross, fx_rate}} — what the
+    payment looked like before conversion, so the report can show the rate used.
+    The library keeps only the converted figure."""
     from cgt_calc.model import RuleType
 
     symbol_isins = symbol_isins or {}
+    dividend_meta = dividend_meta or {}
 
     disposals = []
     acquisitions = []
@@ -71,10 +77,15 @@ def serialize_report(report, symbol_isins: dict | None = None) -> dict:
                 if kind == "dividend" and e.dividend is not None:
                     div = e.dividend
                     isin = symbol_isins.get(label)
+                    meta = dividend_meta.get((dt.isoformat(), label), {})
                     dividends.append(
                         {
                             "date": dt.isoformat(),
                             "symbol": label,
+                            # The payment as the broker reported it, for audit.
+                            "currency": meta.get("currency"),
+                            "gross": meta.get("gross"),
+                            "fx_rate": meta.get("fx_rate"),
                             # ISIN country: GB → UK dividend (SA100 box 4),
                             # anything else → foreign pages.
                             "isin": str(isin) if isin else None,

@@ -38,8 +38,17 @@ actions: "pay £X into your pension before 5 April and save ~£Y". Also the plac
 - Works for the tax year now running as well as finished ones: that year has no report
   yet, so investment figures start at zero and the manual overrides carry it. This is
   the tab where "expiring" tips are actionable.
-- Estimated-tax service used by module 4's headline cards (CGT at 18/24%, dividends at
-  8.75/33.75/39.35%, interest at marginal rate after PSA — per the year's constants file).
+- Estimated-tax service used by module 4's headline cards: `core.tax_profile` stacks
+  income in HMRC order and hands the band positions to `core.estimator`, which owns the
+  rules — capital gains at the rate for the **disposal date** (2024/25 splits at
+  30 Oct), the annual exempt amount and losses allocated against the highest-charged
+  gains first, the remaining basic rate band filled with the gains that save most by
+  sitting in it, dividends at 8.75/33.75/39.35% less Foreign Tax Credit Relief, interest
+  at the marginal rate after the PSA — all per the year's constants file.
+- Payments on account (TMA 1970 s59A): due only when the balancing payment **excluding
+  capital gains tax** tops £1,000 AND under 80% of the year's income tax was collected
+  at source. Both conditions are computed and shown either way, because a large gain
+  moves the headline bill without moving this test at all.
 - Tables owned: `planner_inputs`.
 
 **Consumes** — module 1, module 4's summary feed, the per-tax-year constants file.

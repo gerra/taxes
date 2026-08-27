@@ -211,7 +211,20 @@ function ProfileSummary({ data }: { data: PlannerData }) {
     `Income is stacked in HMRC order — non-savings, then interest, then dividends, then gains — and each slice taxed at the band it lands in.\n\n` +
     `Dividends: ${gbp(p.tax.dividend_tax)} after the ${gbp(y.dividend_allowance, 0)} dividend allowance (rates ${pct(y.dividend_rates.basic)} / ${pct(y.dividend_rates.higher)} / ${pct(y.dividend_rates.additional)}).\n` +
     `Interest: ${gbp(p.tax.savings_tax)} after your ${gbp(p.allowances.psa, 0)} personal savings allowance${p.allowances.starting_rate_used > 0 ? ` and ${gbp(p.allowances.starting_rate_used, 0)} starting-rate band` : ''}.\n` +
-    `CGT: ${gbp(p.tax.cgt_estimate)} after the ${gbp(y.cgt_allowance, 0)} annual exempt amount — ${pct(y.cgt_rates_shares.basic)} within the basic band, ${pct(y.cgt_rates_shares.higher)} above.\n\n` +
+    `CGT: ${gbp(p.tax.cgt_total)} after the ${gbp(y.cgt_allowance, 0)} annual exempt amount, ` +
+    // A year whose rates changed mid-year has a slice at each rate; naming one
+    // pair of rates would be wrong for half the disposals.
+    (p.cgt.buckets.length > 0
+      ? p.cgt.buckets
+          .map(
+            (b) =>
+              `${b.label.toLowerCase()}: ${gbp(b.net)} at ${pct(b.basic_rate)}/${pct(b.higher_rate)}`,
+          )
+          .join('; ')
+      : `${pct(y.cgt_rates_shares.basic)} within the basic band, ${pct(y.cgt_rates_shares.higher)} above`) +
+    `.\n` +
+    (p.tax.cgt_note ? `${p.tax.cgt_note}\n` : '') +
+    `\n` +
     `Employment tax is already paid via PAYE and isn't included.`
   const marginalTip =
     `Your taxable income (${gbp(p.bands.taxable_income, 0)}) sits in the ${p.bands.marginal_band} band → ${pct(p.marginal.income_rate)} relief on pension contributions.` +
@@ -236,11 +249,11 @@ function ProfileSummary({ data }: { data: PlannerData }) {
       <div className="stat-card tip-wrap" data-tip={taxTip}>
         <div className="stat-title">Est. tax on investments</div>
         <div className="stat-value">
-          {gbp(p.tax.dividend_tax + p.tax.savings_tax + p.tax.cgt_estimate)}
+          {gbp(p.tax.dividend_tax + p.tax.savings_tax + p.tax.cgt_total)}
         </div>
         <div className="muted small">
           dividends {gbp(p.tax.dividend_tax, 0)} · interest {gbp(p.tax.savings_tax, 0)} · CGT{' '}
-          {gbp(p.tax.cgt_estimate, 0)}
+          {gbp(p.tax.cgt_total, 0)}
         </div>
       </div>
       <div className="stat-card tip-wrap" data-tip={marginalTip}>

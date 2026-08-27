@@ -12,7 +12,7 @@ Job JSON:
    schwab_equity_award_json|freetrade|raw: path}, "spin_offs": {dst: src},
    "exchange_rates_file": path, "isin_translation_file": path,
    "work_dir": path, "pdf_path": path|null, "balance_check": bool,
-   "exempt_securities": [ticker|ISIN, ...]}
+   "exempt_securities": [ticker|ISIN, ...], "interest_fund_tickers": [ticker, ...]}
 
 Result JSON: {"ok": true, ...} or {"ok": false, "error": {"type", "message", ...}}.
 Written to the result file, never stdout (the library prints to stdout).
@@ -30,6 +30,7 @@ from pathlib import Path
 
 from cgt_calc.exceptions import CgtError, InvalidTransactionError
 
+from core.estimator import KNOWN_INTEREST_FUNDS, OFFSHORE_ISIN_PREFIXES
 from engine.serialize import serialize_report
 
 
@@ -202,9 +203,6 @@ _ACCRUED = re.compile(
 AIS_NOMINAL_LIMIT = Decimal(5000)
 # Freetrade names a T-bill by its maturity date: "UK T-Bill 15/07/24".
 _TBILL_DATE = re.compile(r"(\d{2})/(\d{2})/(\d{2,4})")
-# ISIN prefixes of the usual offshore fund domiciles: an ETF or fund registered
-# there is an offshore fund, whose excess reported income is taxable (HS265).
-OFFSHORE_ISIN_PREFIXES = ("IE", "LU", "JE", "GG", "IM", "KY", "BM")
 
 
 def detect_exempt_securities(transactions) -> list[dict]:
@@ -405,6 +403,36 @@ def exempt_summary(job: dict, transactions, warnings: list[str]) -> tuple[list[s
     }
 
 
+def dividend_meta(transactions, converter) -> dict:
+    """What each dividend looked like before conversion — currency, gross amount
+    and the HMRC monthly rate used — keyed by (date, symbol). The library keeps
+    only the GBP figure, and the itemised report table has to show the rate."""
+    from cgt_calc.model import ActionType
+
+    out: dict[tuple[str, str], dict] = {}
+    for t in transactions:
+        if t.action != ActionType.DIVIDEND or not t.symbol or t.amount is None:
+            continue
+        key = (t.date.isoformat(), t.symbol)
+        row = out.setdefault(key, {"currency": t.currency, "gross": Decimal(0), "fx_rate": None})
+        if row["currency"] != t.currency:  # two currencies in a day: no single rate
+            row["currency"] = None
+        row["gross"] += t.amount
+    for (day, _symbol), row in out.items():
+        if not row["currency"]:
+            continue
+        if row["currency"] == "GBP":
+            row["fx_rate"] = "1"
+            continue
+        try:
+            row["fx_rate"] = str(
+                converter.currency_to_gbp_rate(row["currency"], date.fromisoformat(day))
+            )
+        except Exception:  # noqa: BLE001 — a missing rate is a blank column, not a failure
+            row["fx_rate"] = None
+    return {k: {**v, "gross": str(v["gross"])} for k, v in out.items()}
+
+
 def run_calculate(job: dict) -> dict:
     from cgt_calc import render_latex
     from cgt_calc.args_parser import create_parser
@@ -439,6 +467,12 @@ def run_calculate(job: dict) -> dict:
     argv += ["--exchange-rates-file", job["exchange_rates_file"]]
     argv += ["--isin-translation-file", job["isin_translation_file"]]
     argv += ["--spin-offs-file", os.path.join(job["work_dir"], "spin_offs.csv")]
+    # Bond funds and bond ETFs distribute interest, not dividends. Telling the
+    # library keeps its own totals and PDF in step with core.estimator, which
+    # classifies the same holdings for the report.
+    interest_funds = job.get("interest_fund_tickers") or sorted(KNOWN_INTEREST_FUNDS)
+    if interest_funds:
+        argv += ["--interest-fund-tickers", ",".join(interest_funds)]
     if not job.get("balance_check", True):
         argv.append("--no-balance-check")
     args = create_parser().parse_args(argv)
@@ -494,7 +528,9 @@ def run_calculate(job: dict) -> dict:
     for t in broker_transactions:
         if t.symbol and t.isin and t.symbol not in symbol_isins:
             symbol_isins[t.symbol] = t.isin
-    bundle = serialize_report(report, symbol_isins)
+    bundle = serialize_report(
+        report, symbol_isins, dividend_meta(broker_transactions, currency_converter)
+    )
     bundle["refunds"] = refunds
     _, bundle["exempt"] = exempt_summary(job, broker_transactions, handler.messages)
     bundle["offshore_funds_without_eri"] = offshore_funds_without_eri(

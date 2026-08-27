@@ -39,16 +39,30 @@ constants file (allowances, rates, box numbers) shared with module 5.
    - **Exempt disposals** (gilts, T-bills): summarised in a banner with an explanation and
      badged in the disposals table; never in the SA108 boxes. An Accrued Income Scheme
      notice flags gilt trades when more than £5,000 nominal was held (not computed).
-   - **SA106**: foreign dividends (Schwab USD), foreign tax taken off (15% US
-     withholding), foreign interest, and Foreign Tax Credit Relief.
+   - **SA106**: foreign dividends (Schwab USD), foreign tax taken off (capped at the
+     treaty rate — 15% for the US), foreign interest, bond-fund interest distributions,
+     and Foreign Tax Credit Relief. FTCR is a credit against the tax due, capped at the
+     lower of the tax withheld, the treaty rate and the UK tax on that same income; it
+     never reduces the taxable amount.
+   - **SA108 box 51** in a year whose CGT rates changed mid-year (2024/25 from 30 Oct):
+     the return's own calculation charges the whole year at the pre-change rates, so the
+     extra due on later disposals is entered by hand. The report shows the return's
+     figure, the adjustment, and what is actually due.
    - **ERI** (if present): offshore-fund excess reported income per HS265.
 3. **Capital gains drill-down**: table of disposals (date, symbol, quantity, proceeds,
    gain/loss) expanding to the rule-by-rule breakdown from `calculation_log` — the
    same-day/B&B/S104 matches, allowable cost, fees, and the pool state after. This IS
    the "explanation of every number" for gains: each line links its rule to a
    two-sentence plain-English description (what the rule is, why it applied here).
-4. **Dividends & interest detail**: per-event list, withholding and treaty relief
-   shown explicitly, monthly-grouped interest per broker.
+4. **Distributions, classified**: every distribution itemised — date, ticker, gross in
+   the payment currency, the HMRC rate used, GBP amount, tax withheld — against what it
+   is for UK tax rather than what the broker called it. REIT property income
+   distributions (20% withheld) become property income, distributions from funds holding
+   >60% interest-bearing assets become savings income, and neither uses the dividend
+   allowance. Each row expands to the reasoning. `core.estimator` owns the rules; an
+   offshore fund whose reporting-fund status is unknown gets a notice rather than a
+   guess. Below it, the raw per-event dividend and interest lists as the broker sent
+   them, monthly-grouped interest per broker.
 5. **Warnings**: everything from `ReportBundle.warnings` (balance-check, recalculated
    sell-to-cover amounts, missing allowance for a future year) rendered as first-class
    cards — nothing the engine noticed stays hidden.

@@ -199,11 +199,15 @@ def test_dividends_split_by_isin_country_and_tbill_row():
     }
     view = build_view(bundle, 2024, None)
     boxes = {(b["form"], b["box"]): b for b in view["sa_boxes"]}
+    # LAND paid gross, so it stays an ordinary dividend (a REIT PID always has
+    # 20% deducted); VGOV is a bond fund, so its distribution is interest.
     assert boxes[("SA100 TR3", "4")]["value"] == 300.0
     assert "LAND" in boxes[("SA100 TR3", "4")]["explain"]
-    # total 1200 in the bundle totals: 800 foreign lines + 100 not in lines (ERI) → 900
-    assert boxes[("SA106", "dividends")]["value"] == 900.0
-    assert "VGOV" in boxes[("SA106", "dividends")]["explain"]
+    assert boxes[("SA106", "dividends")]["value"] == 700.0
+    assert "META" in boxes[("SA106", "dividends")]["explain"]
+    assert boxes[("SA106", "interest")]["value"] == 100.0
+    assert "VGOV" in boxes[("SA106", "interest")]["explain"]
+    assert "VGOV" not in boxes[("SA106", "dividends")]["explain"]
     assert boxes[("SA101 Ai1", "3")]["value"] == 12.12
     assert "1 UK Treasury bill matured" in boxes[("SA101 Ai1", "3")]["explain"]
     keys = {n["key"] for n in view["notices"]}

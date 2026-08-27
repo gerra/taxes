@@ -1,0 +1,554 @@
+{
+  "status": "ok",
+  "run_id": 1,
+  "has_pdf": false,
+  "provisional": false,
+  "coverage_overall": "ok",
+  "view": {
+    "tax_year": 2024,
+    "label": "2024/25",
+    "filing_deadline": "2026-01-31",
+    "cards": {
+      "taxable_gain": {
+        "value": 5563.52,
+        "sub": "after \u00a33,000 annual exempt amount",
+        "estimated_tax": 1233.92
+      },
+      "dividends_taxable": {
+        "value": 0.0,
+        "sub": "of \u00a3183.10 total, after the \u00a3500 dividend allowance \u2014 \u00a327.46 of foreign tax comes off the tax due, not off this figure",
+        "estimated_tax": 0.0
+      },
+      "uk_interest": {
+        "value": 5.28
+      },
+      "foreign_interest": {
+        "value": 9.37
+      },
+      "interest_estimated_tax": 190.1,
+      "other_income": {
+        "value": 230.64,
+        "tax_taken_off": 57.66,
+        "estimated_tax": 46.13
+      }
+    },
+    "sa_boxes": [
+      {
+        "form": "SA108",
+        "box": "23",
+        "label": "Number of disposals",
+        "value": 3,
+        "format": "int",
+        "explain": "How many share disposals you made in 2024/25. Same-day trades in one security count as one disposal."
+      },
+      {
+        "form": "SA108",
+        "box": "24",
+        "label": "Disposal proceeds",
+        "value": 60000.0,
+        "explain": "The GBP sum of everything you sold this tax year, converted at HMRC monthly exchange rates on each sale date."
+      },
+      {
+        "form": "SA108",
+        "box": "25",
+        "label": "Allowable costs",
+        "value": 51436.48,
+        "explain": "What HMRC lets you deduct: the matched acquisition cost of the shares sold (same-day, then 30-day, then the Section 104 pooled average cost) plus dealing fees."
+      },
+      {
+        "form": "SA108",
+        "box": "26",
+        "label": "Gains in the year, before losses",
+        "value": 8563.52,
+        "explain": "The sum of every disposal that made a gain, before subtracting the loss-making ones."
+      },
+      {
+        "form": "SA108",
+        "box": "27",
+        "label": "Losses in the year",
+        "value": 0.0,
+        "explain": "The sum of every disposal that made a loss. Losses first offset this year's gains; unused losses carry forward if claimed within 4 years."
+      },
+      {
+        "form": "SA100 TR3",
+        "box": "2",
+        "label": "Untaxed UK interest",
+        "value": 5.28,
+        "explain": "Interest paid gross by UK banks/brokers (GBP accounts). Taxed after your personal savings allowance."
+      },
+      {
+        "form": "SA106",
+        "box": "F",
+        "label": "Foreign interest",
+        "value": 9.37,
+        "explain": "Interest from non-UK sources (e.g. USD cash at a US broker), converted at HMRC monthly rates. Under \u00a32,000 with no foreign tax taken off it can go on the main return; otherwise it belongs on the SA106 foreign pages."
+      },
+      {
+        "form": "SA106",
+        "box": "interest",
+        "label": "Interest distributions from bond funds",
+        "value": 407.79,
+        "explain": "Distributions from funds holding more than 60% interest-bearing assets (ERNS, VGOV, VUSC) are interest for UK tax, not dividends (ITTOIA 2005 s378A): savings income, taxed after the personal savings allowance and never touching the dividend allowance. Offshore-domiciled funds report them on the SA106 foreign pages; a UK-domiciled fund's go in box 2 with your other interest. Check each fund's reporting-fund statement \u2014 the >60% test is what decides it, not the fund's name."
+      },
+      {
+        "form": "SA100 TR3",
+        "box": "4",
+        "label": "Dividends from UK companies",
+        "value": 0.0,
+        "explain": "Ordinary dividends from UK-registered companies, gross. UK dividends carry no withholding, so anything a UK payer took tax off has been reclassified as a REIT property income distribution and moved to box 17 \u2014 see the distributions table."
+      },
+      {
+        "form": "SA106",
+        "box": "dividends",
+        "label": "Foreign dividends (gross)",
+        "value": 183.1,
+        "explain": "Dividends from payers registered outside the UK (META) \u2014 US shares, and Irish- or Luxembourg-domiciled ETFs count as foreign even when they pay in GBP \u2014 gross, in GBP at HMRC monthly rates, plus any excess reported income. Goes on the SA106 foreign pages (or the main return's small-amounts box if under that year's limit) with the withholding alongside."
+      },
+      {
+        "form": "SA106",
+        "box": "foreign tax",
+        "label": "Foreign tax taken off (treaty-limited)",
+        "value": 27.46,
+        "explain": "Withholding capped at the treaty rate (15% under the UK\u2013US treaty) \u2014 claimable as Foreign Tax Credit Relief, which comes off the UK tax due, not off the dividend figure above. Anything withheld above the treaty rate is not creditable here; only the IRS can refund it. The relief is further capped at the UK tax on this same income."
+      },
+      {
+        "form": "SA100 TR3",
+        "box": "17",
+        "label": "Other taxable income (REIT PIDs, share lending)",
+        "value": 230.64,
+        "explain": "\u00a3230.64 of property income distributions from UK REITs (LAND, PHP), gross. PIDs are taxed as property income and share-lending fees as miscellaneous income \u2014 neither is a dividend nor interest, so both go in 'Other UK income' box 17, with what they are in box 21. Share-lending fees under \u00a31,000 are covered by the trading and miscellaneous income allowance if you have no other such income; PIDs are not covered by the \u00a31,000 property allowance."
+      },
+      {
+        "form": "SA100 TR3",
+        "box": "19",
+        "label": "Tax taken off other income",
+        "value": 57.66,
+        "explain": "The 20% basic-rate tax the REITs withheld from the PIDs before paying them. HMRC sets it against your bill, so enter it here rather than netting it off box 17."
+      }
+    ],
+    "distributions": [
+      {
+        "date": "2024-05-08",
+        "symbol": "PHP",
+        "source": "PHP",
+        "kind": "property_income_distribution",
+        "label": "REIT property income distribution (PID)",
+        "taxed_as": "property",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": "80.64",
+        "fx_rate": "1",
+        "gross_gbp": 80.64,
+        "withheld_gbp": 20.16,
+        "treaty_relief_gbp": 0.0,
+        "why": "Primary Health Properties \u2014 UK REIT paid this with \u00a320.16 tax taken off (25%). UK dividends are always paid gross, so this is a REIT property income distribution out of its tax-exempt property business: property income at your marginal rate, with the 20% withheld credited against the bill. It does not use the dividend allowance."
+      },
+      {
+        "date": "2024-06-26",
+        "symbol": "META",
+        "source": "META",
+        "kind": "foreign_dividend",
+        "label": "Foreign dividend",
+        "taxed_as": "dividend",
+        "uses_dividend_allowance": true,
+        "currency": "USD",
+        "gross": "231.73",
+        "fx_rate": "1.2657",
+        "gross_gbp": 183.1,
+        "withheld_gbp": 27.47,
+        "treaty_relief_gbp": 27.46,
+        "why": "The payer is registered outside the UK (US), so this is a foreign dividend: UK dividend rates apply, and any tax withheld is claimable as Foreign Tax Credit Relief up to the treaty rate."
+      },
+      {
+        "date": "2024-07-15",
+        "symbol": "VGOV",
+        "source": "VGOV",
+        "kind": "interest_distribution",
+        "label": "Bond fund interest distribution",
+        "taxed_as": "savings",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": "180.20",
+        "fx_rate": "1",
+        "gross_gbp": 180.2,
+        "withheld_gbp": 0.0,
+        "treaty_relief_gbp": 0.0,
+        "why": "Vanguard UK Gilt UCITS ETF \u2014 gilts only: a fund holding more than 60% interest-bearing assets pays interest distributions, taxed as savings income, not dividends (ITTOIA 2005 s378A)."
+      },
+      {
+        "date": "2024-08-08",
+        "symbol": "LAND",
+        "source": "LAND",
+        "kind": "property_income_distribution",
+        "label": "REIT property income distribution (PID)",
+        "taxed_as": "property",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": "150.00",
+        "fx_rate": "1",
+        "gross_gbp": 150.0,
+        "withheld_gbp": 37.5,
+        "treaty_relief_gbp": 0.0,
+        "why": "Landsec (British Land's sector peer) \u2014 UK REIT paid this with \u00a337.50 tax taken off (25%). UK dividends are always paid gross, so this is a REIT property income distribution out of its tax-exempt property business: property income at your marginal rate, with the 20% withheld credited against the bill. It does not use the dividend allowance."
+      },
+      {
+        "date": "2024-09-30",
+        "symbol": null,
+        "source": "Charles Schwab",
+        "kind": "foreign_interest",
+        "label": "Foreign interest",
+        "taxed_as": "savings",
+        "uses_dividend_allowance": false,
+        "currency": "USD",
+        "gross": null,
+        "fx_rate": null,
+        "gross_gbp": 9.37,
+        "withheld_gbp": 0.0,
+        "treaty_relief_gbp": 0.0,
+        "why": "Cash interest from a non-UK source (e.g. USD cash at a US broker): savings income here, converted at the HMRC monthly rate. The UK\u2013US treaty rate on interest is nil, so any withholding is not creditable."
+      },
+      {
+        "date": "2024-09-30",
+        "symbol": null,
+        "source": "Freetrade",
+        "kind": "uk_interest",
+        "label": "UK interest",
+        "taxed_as": "savings",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": null,
+        "fx_rate": null,
+        "gross_gbp": 5.28,
+        "withheld_gbp": 0.0,
+        "treaty_relief_gbp": 0.0,
+        "why": "Cash interest paid gross by a UK bank or broker: savings income, taxed after the personal savings allowance."
+      },
+      {
+        "date": "2024-10-15",
+        "symbol": "VUSC",
+        "source": "VUSC",
+        "kind": "interest_distribution",
+        "label": "Bond fund interest distribution",
+        "taxed_as": "savings",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": "120.09",
+        "fx_rate": "1",
+        "gross_gbp": 120.09,
+        "withheld_gbp": 0.0,
+        "treaty_relief_gbp": 0.0,
+        "why": "Vanguard USD Corporate 1-3 Year Bond UCITS ETF: a fund holding more than 60% interest-bearing assets pays interest distributions, taxed as savings income, not dividends (ITTOIA 2005 s378A)."
+      },
+      {
+        "date": "2025-01-15",
+        "symbol": "ERNS",
+        "source": "ERNS",
+        "kind": "interest_distribution",
+        "label": "Bond fund interest distribution",
+        "taxed_as": "savings",
+        "uses_dividend_allowance": false,
+        "currency": "GBP",
+        "gross": "107.50",
+        "fx_rate": "1",
+        "gross_gbp": 107.5,
+        "withheld_gbp": 0.0,
+        "treaty_relief_gbp": 0.0,
+        "why": "iShares \u00a3 Ultrashort Bond UCITS ETF: a fund holding more than 60% interest-bearing assets pays interest distributions, taxed as savings income, not dividends (ITTOIA 2005 s378A)."
+      }
+    ],
+    "distribution_totals": {
+      "uk_dividends": 0.0,
+      "foreign_dividends": 183.1,
+      "dividends_total": 183.1,
+      "foreign_dividend_tax": 27.47,
+      "foreign_dividend_treaty_relief": 27.46,
+      "property_income": 230.64,
+      "property_income_tax": 57.66,
+      "share_lending_fees": 0.0,
+      "other_income": 230.64,
+      "other_income_tax": 57.66,
+      "interest_distributions": 407.79,
+      "uk_interest": 5.28,
+      "foreign_interest": 9.37
+    },
+    "rate_change_split": {
+      "before": 2524.95,
+      "after": 6038.57,
+      "date": "2024-10-30",
+      "rates_before": {
+        "basic": 0.1,
+        "higher": 0.2
+      },
+      "rates_after": {
+        "basic": 0.18,
+        "higher": 0.24
+      },
+      "has_pre_change_disposals": true,
+      "needs_box_51_adjustment": true,
+      "cgt_adjustment": 121.32,
+      "sa_cgt_at_pre_oct_rates": 1112.6,
+      "cgt_total": 1233.92,
+      "estimated": false,
+      "note": "The Self Assessment return charges the whole year at the pre-30 Oct 2024 rates (10%/20%), so its own figure is \u00a31,112.60. Your disposals on or after 30 Oct 2024 are charged at 18%/24% instead, which is \u00a3121.32 more. Put that in box 51 of the Capital Gains Summary (SA108), 'adjustment to Capital Gains Tax', and say why in box 54."
+    },
+    "exempt_disposals": null,
+    "warnings": [],
+    "notices": [
+      {
+        "key": "pid_as_dividend__LAND",
+        "tax_year": 2024,
+        "kind": "warning",
+        "category": "pid_as_dividend",
+        "title": "[[LAND]] withheld tax on a UK 'dividend' \u2014 a REIT PID",
+        "summary": "\u00a3150.00 of distributions with [[\u00a337.50]] tax taken off, moved out of the dividend figure and taxed as property income.",
+        "occurrences": ["[[8 Aug 2024]]: \u00a3150.00 gross, [[\u00a337.50]] withheld"],
+        "why": "UK dividends are paid without withholding. A UK payer taking 20% off is a REIT paying a property income distribution, which the export labelled as a dividend (Freetrade only started typing these PROPERTY in 2025).",
+        "action": "The tool has reclassified it: the gross amount is in 'Other UK income' box 17 as property income and the 20% withheld in box 19, out of the dividend boxes and out of the dividend allowance. Check the payment notice says 'property income distribution' \u2014 if it was an ordinary REIT dividend paid gross it would belong in box 4 instead.",
+        "count": 1,
+        "raw": []
+      },
+      {
+        "key": "pid_as_dividend__PHP",
+        "tax_year": 2024,
+        "kind": "warning",
+        "category": "pid_as_dividend",
+        "title": "[[PHP]] withheld tax on a UK 'dividend' \u2014 a REIT PID",
+        "summary": "\u00a380.64 of distributions with [[\u00a320.16]] tax taken off, moved out of the dividend figure and taxed as property income.",
+        "occurrences": ["[[8 May 2024]]: \u00a380.64 gross, [[\u00a320.16]] withheld"],
+        "why": "UK dividends are paid without withholding. A UK payer taking 20% off is a REIT paying a property income distribution, which the export labelled as a dividend (Freetrade only started typing these PROPERTY in 2025).",
+        "action": "The tool has reclassified it: the gross amount is in 'Other UK income' box 17 as property income and the 20% withheld in box 19, out of the dividend boxes and out of the dividend allowance. Check the payment notice says 'property income distribution' \u2014 if it was an ordinary REIT dividend paid gross it would belong in box 4 instead.",
+        "count": 1,
+        "raw": []
+      }
+    ],
+    "has_estimates": true,
+    "tax_due": {
+      "available": true,
+      "cgt": 1233.92,
+      "cgt_sa_at_pre_oct_rates": 1112.6,
+      "cgt_adjustment": 121.32,
+      "cgt_note": "The Self Assessment return charges the whole year at the pre-30 Oct 2024 rates (10%/20%), so its own figure is \u00a31,112.60. Your disposals on or after 30 Oct 2024 are charged at 18%/24% instead, which is \u00a3121.32 more. Put that in box 51 of the Capital Gains Summary (SA108), 'adjustment to Capital Gains Tax', and say why in box 54.",
+      "dividends": 0.0,
+      "dividends_before_ftcr": 0,
+      "ftcr": 0.0,
+      "foreign_tax_withheld": 27.47,
+      "interest": 190.1,
+      "other_income": 46.13,
+      "total": 1470.15,
+      "excluding_cgt": 236.23,
+      "marginal_band": "additional",
+      "personal_allowance": 0.0,
+      "psa": 0,
+      "cgt_at_basic": 0.0,
+      "cgt_at_higher": 5562.0,
+      "cgt_rates": {
+        "basic": 0.18,
+        "higher": 0.24
+      },
+      "cgt_buckets": [
+        {
+          "key": "post_30_oct",
+          "label": "Gains on disposals on or after 30 Oct 2024",
+          "gain": 6038.57,
+          "relief": 3000.0,
+          "net": 3038.57,
+          "rounded": 3038.0,
+          "at_basic": 0.0,
+          "at_higher": 3038.0,
+          "basic_rate": 0.18,
+          "higher_rate": 0.24,
+          "tax": 729.12
+        },
+        {
+          "key": "pre_30_oct",
+          "label": "Gains on disposals before 30 Oct 2024",
+          "gain": 2524.95,
+          "relief": 0.0,
+          "net": 2524.95,
+          "rounded": 2524.0,
+          "at_basic": 0.0,
+          "at_higher": 2524.0,
+          "basic_rate": 0.1,
+          "higher_rate": 0.2,
+          "tax": 504.8
+        }
+      ],
+      "dividend_allowance": 500,
+      "cgt_allowance": 3000,
+      "payments_on_account": {
+        "required": false,
+        "threshold": 1000.0,
+        "liability_excluding_cgt": 236.23,
+        "over_threshold": false,
+        "tax_collected_at_source": 136289.16,
+        "percent_at_source": 99.83,
+        "under_80_percent_at_source": false,
+        "each_instalment": 0.0,
+        "explain": "Payments on account are due only when both tests are met: the Self Assessment balancing payment excluding capital gains tax is over \u00a31,000 (here \u00a3236.23 \u2014 no), and less than 80% of the year's income tax was collected at source (here 99.8% \u2014 no). Neither instalment applies. Capital gains tax is never part of a payment on account, so a big CGT bill on its own never triggers one."
+      }
+    }
+  },
+  "bundle": {
+    "totals": {
+      "disposal_count": 3,
+      "disposal_proceeds": "60000.00",
+      "allowable_costs": "51436.48",
+      "capital_gain_before_losses": "8563.52",
+      "capital_loss": "0",
+      "total_gain": "8563.52",
+      "capital_gain_allowance": "3000",
+      "taxable_gain": "5563.52",
+      "dividends_total": "821.53",
+      "dividend_treaty_relief": "27.47",
+      "dividend_allowance": "500",
+      "dividends_taxable": "294.06",
+      "uk_interest": "5.28",
+      "foreign_interest": "9.37",
+      "other_income": "0",
+      "other_income_tax": "0",
+      "eri_dividends": "0",
+      "eri_interest": "0"
+    },
+    "disposals": [
+      {
+        "date": "2024-05-16",
+        "symbol": "META",
+        "gain": "185.90",
+        "amount": "0",
+        "entries": []
+      },
+      {
+        "date": "2024-08-26",
+        "symbol": "META",
+        "gain": "2339.05",
+        "amount": "0",
+        "entries": []
+      },
+      {
+        "date": "2025-02-25",
+        "symbol": "META",
+        "gain": "6038.57",
+        "amount": "0",
+        "entries": []
+      }
+    ],
+    "dividends": [
+      {
+        "date": "2024-06-26",
+        "symbol": "META",
+        "country": "US",
+        "isin": "US30303M1027",
+        "amount_gbp": "183.10",
+        "tax_at_source_gbp": "-27.47",
+        "is_interest": false,
+        "currency": "USD",
+        "gross": "231.73",
+        "fx_rate": "1.2657",
+        "treaty": {
+          "country": "USA",
+          "country_rate": "0.15",
+          "treaty_rate": "0.15",
+          "relief_gbp": "27.47"
+        }
+      },
+      {
+        "date": "2024-08-08",
+        "symbol": "LAND",
+        "country": "GB",
+        "isin": "GB00BYW0PQ60",
+        "amount_gbp": "150.00",
+        "gross": "150.00",
+        "tax_at_source_gbp": "-37.50",
+        "is_interest": false,
+        "currency": "GBP",
+        "fx_rate": "1",
+        "treaty": null
+      },
+      {
+        "date": "2024-05-08",
+        "symbol": "PHP",
+        "country": "GB",
+        "isin": "GB00BYRJ5J14",
+        "amount_gbp": "80.64",
+        "gross": "80.64",
+        "tax_at_source_gbp": "-20.16",
+        "is_interest": false,
+        "currency": "GBP",
+        "fx_rate": "1",
+        "treaty": null
+      },
+      {
+        "date": "2024-07-15",
+        "symbol": "VGOV",
+        "country": "IE",
+        "isin": "IE00B42WWV65",
+        "amount_gbp": "180.20",
+        "gross": "180.20",
+        "tax_at_source_gbp": "0",
+        "is_interest": false,
+        "currency": "GBP",
+        "fx_rate": "1",
+        "treaty": null
+      },
+      {
+        "date": "2024-10-15",
+        "symbol": "VUSC",
+        "country": "IE",
+        "isin": "IE00BGYWT403",
+        "amount_gbp": "120.09",
+        "gross": "120.09",
+        "tax_at_source_gbp": "0",
+        "is_interest": false,
+        "currency": "GBP",
+        "fx_rate": "1",
+        "treaty": null
+      },
+      {
+        "date": "2025-01-15",
+        "symbol": "ERNS",
+        "country": "IE",
+        "isin": "IE00B3VTMJ91",
+        "amount_gbp": "107.50",
+        "gross": "107.50",
+        "tax_at_source_gbp": "0",
+        "is_interest": false,
+        "currency": "GBP",
+        "fx_rate": "1",
+        "treaty": null
+      }
+    ],
+    "interest": [
+      {
+        "date": "2024-09-30",
+        "broker": "Freetrade",
+        "currency": "GBP",
+        "uk": true,
+        "amount_gbp": "5.28"
+      },
+      {
+        "date": "2024-09-30",
+        "broker": "Charles Schwab",
+        "currency": "USD",
+        "uk": false,
+        "amount_gbp": "9.37"
+      }
+    ],
+    "other_income": [],
+    "eri_distributions": [],
+    "interest_by_source": [
+      {
+        "broker": "Charles Schwab",
+        "currency": "USD",
+        "amount_gbp": "9.37"
+      },
+      {
+        "broker": "Freetrade",
+        "currency": "GBP",
+        "amount_gbp": "5.28"
+      }
+    ],
+    "acquisitions": [],
+    "portfolio_eoy": [],
+    "warnings": []
+  }
+}

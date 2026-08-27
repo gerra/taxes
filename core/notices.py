@@ -20,7 +20,7 @@ import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
-from core import tax_years
+from core import estimator, tax_years
 
 _DISCREPANCY = re.compile(
     r"Amount discrepancy for \w+\(date=datetime\.date\((\d+), (\d+), (\d+)\)"
@@ -381,10 +381,11 @@ def _data_notices(bundle: dict | None, tax_year: int | None) -> list[dict]:
                         "in 2025)."
                     ),
                     "action": (
-                        "Strictly this belongs in 'Other UK income' box 17 (gross) with the tax "
-                        "in box 19, not the dividend boxes; the tool has counted it as a UK "
-                        "dividend with the withholding shown. Move it by hand if you prefer the "
-                        "strict treatment."
+                        "The tool has reclassified it: the gross amount is in 'Other UK income' "
+                        "box 17 as property income and the 20% withheld in box 19, out of the "
+                        "dividend boxes and out of the dividend allowance. Check the payment "
+                        "notice says 'property income distribution' — if it was an ordinary "
+                        "REIT dividend paid gross it would belong in box 4 instead."
                     ),
                     "count": 0,
                     "raw": [],
@@ -402,10 +403,45 @@ def _data_notices(bundle: dict | None, tax_year: int | None) -> list[dict]:
     for g in pids.values():
         gross, tax = g.pop("_gross"), g.pop("_tax")
         g["summary"] = (
-            f"£{gross:,.2f} of distributions with [[£{tax:,.2f}]] tax taken off, counted in "
-            "the UK dividends figure."
+            f"£{gross:,.2f} of distributions with [[£{tax:,.2f}]] tax taken off, moved out of "
+            "the dividend figure and taxed as property income."
         )
         out.append(g)
+    rows = estimator.classify_distributions(bundle)
+    unverified = estimator.unverified_fund_distributions(rows, bundle)
+    if unverified:
+        out.append(
+            {
+                "key": "fund_distribution_status",
+                "tax_year": tax_year,
+                "kind": "info",
+                "category": "fund_status",
+                "title": "Check whether these funds distribute interest, not dividends",
+                "summary": (
+                    f"[[{len(unverified)}]] offshore fund"
+                    f"{'s' if len(unverified) != 1 else ''} paid distributions that are being "
+                    "taxed as dividends. If a fund holds more than 60% interest-bearing "
+                    "assets, they are interest instead."
+                ),
+                "occurrences": [
+                    f"[[{f['symbol']}]] ({f['isin']}): £{f['amount_gbp']:,.2f}" for f in unverified
+                ],
+                "why": (
+                    "The bond fund rule (ITTOIA 2005 s378A) turns a fund's distributions into "
+                    "interest once more than 60% of its assets are interest-bearing — taxed at "
+                    "your income tax rates with the personal savings allowance, not at dividend "
+                    "rates with the dividend allowance. Nothing in a broker export says which "
+                    "side of 60% a fund sits, so it cannot be inferred here."
+                ),
+                "action": (
+                    "Look up each fund's reporting-fund statement or factsheet. If it is a bond "
+                    "fund, add its ticker to KNOWN_INTEREST_FUNDS in core/estimator.py and "
+                    "re-run — the distribution then moves to the interest figure."
+                ),
+                "count": len(unverified),
+                "raw": [],
+            }
+        )
     foreign_tax = [
         r for r in bundle.get("interest_tax") or [] if r.get("currency") and r["currency"] != "GBP"
     ]

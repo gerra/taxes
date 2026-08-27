@@ -1,33 +1,145 @@
 """ReportBundle + tax-year constants -> what the report page renders:
-headline cards, the SA box table (with per-figure explanations), and the
-2024/25 mid-year CGT rate-change split when applicable.
+headline cards, the SA box table (with per-figure explanations), the itemised
+distribution table, and the 2024/25 mid-year CGT rate-change split with the
+box 51 adjustment it needs.
 
 Box numbers follow the 2024/25 paper forms; verify on each new year's forms.
 Every figure gets a short explanation: what it is, how it was computed here,
-where it goes."""
+where it goes.
+
+The tax rules themselves live in `core.estimator`; this module only decides
+what is shown and says where each figure goes on the return."""
 
 from datetime import date
 from decimal import Decimal
 
-from core import notices, tax_years
+from core import estimator, notices, tax_years
 
 
 def _f(value) -> float:
     return float(Decimal(value)) if value is not None else 0.0
 
 
-def _gain_split(bundle: dict, change_date: str) -> dict:
-    cut = date.fromisoformat(change_date)
+def chargeable_disposals(bundle: dict) -> list[dict]:
+    """The disposals that count for CGT: gilts and T-bills are outside it."""
+    return [
+        {"date": e["date"], "symbol": e.get("symbol"), "gain": e.get("gain")}
+        for e in bundle.get("disposals", [])
+        if not estimator.is_cgt_exempt(e)
+    ]
+
+
+def _gain_split(bundle: dict, year: dict, profile: dict | None) -> dict:
+    """Gains either side of the mid-year rate change, plus the box 51 adjustment
+    the return needs because its own calculation charges the whole year at the
+    pre-change rates.
+
+    Without a planner profile there is no income figure to place the gains in
+    the bands, so the adjustment is shown at the higher rates and says so."""
+    change = year["cgt_mid_year_change"]
+    cut = date.fromisoformat(change["date"])
     before = after = 0.0
-    for event in bundle.get("disposals", []):
-        if event.get("exempt"):
-            continue
+    for event in chargeable_disposals(bundle):
         gain = _f(event["gain"])
         if date.fromisoformat(event["date"]) < cut:
             before += gain
         else:
             after += gain
-    return {"before": round(before, 2), "after": round(after, 2), "date": change_date}
+    if profile:
+        cgt = profile["cgt"]
+    else:
+        computed = estimator.cgt_for_year(chargeable_disposals(bundle), year, basic_room=0)
+        cgt = {
+            "cgt_adjustment": round(float(computed["cgt_adjustment"]), 2),
+            "sa_cgt_at_pre_oct_rates": round(float(computed["sa_cgt_at_pre_oct_rates"]), 2),
+            "cgt_total": round(float(computed["cgt_total"]), 2),
+            "needs_box_51_adjustment": computed["needs_box_51_adjustment"],
+            "has_pre_change_disposals": computed["has_pre_change_disposals"],
+            "adjustment_note": computed["adjustment_note"],
+        }
+    note = cgt["adjustment_note"]
+    if note and not profile:
+        note += (
+            " That assumes every gain sits above the basic rate band — add your income in "
+            "the Planner tab to place them exactly."
+        )
+    return {
+        "before": round(before, 2),
+        "after": round(after, 2),
+        "date": change["date"],
+        "rates_before": change["rates_before"],
+        "rates_after": year["cgt_rates_shares"],
+        "has_pre_change_disposals": cgt["has_pre_change_disposals"],
+        "needs_box_51_adjustment": cgt["needs_box_51_adjustment"],
+        "cgt_adjustment": cgt["cgt_adjustment"],
+        "sa_cgt_at_pre_oct_rates": cgt["sa_cgt_at_pre_oct_rates"],
+        "cgt_total": cgt["cgt_total"],
+        "estimated": profile is None,
+        "note": note
+        or (
+            f"Every disposal fell on or after {_short(change['date'])}, so there is nothing to "
+            "adjust: the return's own calculation already charges them correctly."
+            if not cgt["has_pre_change_disposals"]
+            else "The gains are within the annual exempt amount, so there is no tax to adjust."
+        ),
+    }
+
+
+def _short(iso: str) -> str:
+    return date.fromisoformat(iso).strftime("%-d %b %Y")
+
+
+def classified_income(bundle: dict) -> dict:
+    """Investment income split the way UK tax splits it, not the way the broker
+    labelled it: REIT PIDs out of the dividend figure and into property income,
+    bond-fund distributions out and into savings income. `rows` is the itemised
+    table behind the totals, for a hand audit.
+
+    Bundles produced before the itemised rows existed fall back to the engine's
+    own totals for whichever family has no rows."""
+    t = bundle["totals"]
+    rows = estimator.classify_distributions(bundle)
+    c = estimator.income_totals(rows)
+    itemised = bool(bundle.get("dividends") or bundle.get("eri_distributions"))
+    int_rows = bundle.get("interest") or []
+    if itemised:
+        uk_dividends = float(c["uk_dividends"])
+        foreign_dividends = float(c["foreign_dividends"])
+        foreign_dividend_tax = float(c["foreign_dividend_tax"])
+        treaty_relief = float(c["foreign_dividend_treaty_relief"])
+    else:
+        uk_dividends = 0.0
+        foreign_dividends = _f(t["dividends_total"])
+        foreign_dividend_tax = _f(t.get("dividend_treaty_relief"))
+        treaty_relief = _f(t.get("dividend_treaty_relief"))
+    if itemised or bundle.get("other_income"):
+        other_income = float(c["other_income"])
+        other_income_tax = float(c["other_income_tax"])
+    else:
+        other_income = _f(t.get("other_income"))
+        other_income_tax = _f(t.get("other_income_tax"))
+    return {
+        "rows": rows,
+        "uk_dividends": round(uk_dividends, 2),
+        "foreign_dividends": round(foreign_dividends, 2),
+        "dividends_total": round(uk_dividends + foreign_dividends, 2),
+        "foreign_dividend_tax": round(foreign_dividend_tax, 2),
+        "foreign_dividend_treaty_relief": round(treaty_relief, 2),
+        "property_income": round(float(c["property_income"]), 2),
+        "property_income_tax": round(float(c["property_income_tax"]), 2),
+        "share_lending_fees": round(float(c["share_lending_fees"]), 2),
+        "other_income": round(other_income, 2),
+        "other_income_tax": round(other_income_tax, 2),
+        "interest_distributions": round(float(c["interest_distributions"]), 2),
+        "uk_interest": round(float(c["uk_interest"]) if int_rows else _f(t["uk_interest"]), 2),
+        "foreign_interest": round(
+            float(c["foreign_interest"]) if int_rows else _f(t["foreign_interest"]), 2
+        ),
+    }
+
+
+def _symbols(rows: list[dict], *kinds: str) -> list[str]:
+    return sorted({r["source"] for r in rows if r["kind"] in kinds and r["source"]})
 
 
 def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
@@ -40,30 +152,27 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
     gains_before_losses = _f(t["capital_gain_before_losses"])
     losses = abs(_f(t["capital_loss"]))
     taxable_gain = _f(t["taxable_gain"]) if t["taxable_gain"] is not None else None
-    dividends_total = _f(t["dividends_total"])
-    treaty_relief = _f(t["dividend_treaty_relief"])
-    dividends_taxable = _f(t["dividends_taxable"])
-    uk_interest = _f(t["uk_interest"])
-    foreign_interest = _f(t["foreign_interest"])
-    other_income = _f(t.get("other_income"))
-    other_income_tax = _f(t.get("other_income_tax"))
-    other_rows = bundle.get("other_income", [])
-    # A REIT distribution is logged under its ticker with tax withheld; a
-    # share-lending fee under the broker's name with none.
-    brokers = {r["broker"] for r in bundle.get("interest", [])} | {"Freetrade", "Charles Schwab"}
-    pid_sources = sorted(
-        {r["source"] for r in other_rows if _f(r.get("tax_gbp")) > 0 or r["source"] not in brokers}
-    )
-    fee_total = sum(_f(r["amount_gbp"]) for r in other_rows if r["source"] not in pid_sources)
-    pid_total = other_income - fee_total
-    # Dividends split by the payer's ISIN country: GB is a UK dividend, anything
-    # else (Irish/Luxembourg ETFs, US shares) belongs on the foreign pages. ERI
-    # (offshore funds by definition) stays with the foreign figure.
-    div_rows = bundle.get("dividends", [])
-    uk_dividends = sum(_f(d["amount_gbp"]) for d in div_rows if d.get("country") == "GB")
-    uk_div_symbols = sorted({d["symbol"] for d in div_rows if d.get("country") == "GB"})
-    foreign_dividends = max(0.0, dividends_total - uk_dividends)
-    foreign_div_symbols = sorted({d["symbol"] for d in div_rows if d.get("country") != "GB"})
+    inc = classified_income(bundle)
+    rows = inc["rows"]
+    dividends_total = inc["dividends_total"]
+    treaty_relief = inc["foreign_dividend_treaty_relief"]
+    # The dividend allowance is the only thing that comes off the taxable
+    # dividend figure. Foreign tax credit relief is a credit against the tax —
+    # deducting it here would relieve it twice.
+    dividends_taxable = max(0.0, dividends_total - _f(y.get("dividend_allowance")))
+    uk_interest = inc["uk_interest"]
+    foreign_interest = inc["foreign_interest"]
+    interest_distributions = inc["interest_distributions"]
+    interest_fund_symbols = _symbols(rows, estimator.INTEREST_DISTRIBUTION, estimator.ERI_INTEREST)
+    other_income = inc["other_income"]
+    other_income_tax = inc["other_income_tax"]
+    pid_total = inc["property_income"]
+    fee_total = inc["share_lending_fees"]
+    pid_sources = _symbols(rows, estimator.PROPERTY_INCOME_DISTRIBUTION)
+    uk_dividends = inc["uk_dividends"]
+    uk_div_symbols = _symbols(rows, estimator.UK_DIVIDEND)
+    foreign_dividends = inc["foreign_dividends"]
+    foreign_div_symbols = _symbols(rows, estimator.FOREIGN_DIVIDEND, estimator.ERI_DIVIDEND)
     # T-bill returns that fall in this year (deeply discounted securities).
     tbills = [t for t in (bundle.get("exempt") or {}).get("tbills", []) if t.get("in_year")]
     tbill_profit = sum(_f(t["profit"]) for t in tbills if t.get("profit") is not None)
@@ -131,15 +240,30 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "SA106 foreign pages.",
         },
         {
+            "form": "SA106",
+            "box": "interest",
+            "label": "Interest distributions from bond funds",
+            "value": round(interest_distributions, 2),
+            "explain": "Distributions from funds holding more than 60% interest-bearing "
+            "assets"
+            + (f" ({', '.join(interest_fund_symbols)})" if interest_fund_symbols else "")
+            + " are interest for UK tax, not dividends (ITTOIA 2005 s378A): savings "
+            "income, taxed after the personal savings allowance and never touching the "
+            "dividend allowance. Offshore-domiciled funds report them on the SA106 "
+            "foreign pages; a UK-domiciled fund's go in box 2 with your other interest. "
+            "Check each fund's reporting-fund statement — the >60% test is what decides "
+            "it, not the fund's name.",
+        },
+        {
             "form": "SA100 TR3",
             "box": "4",
             "label": "Dividends from UK companies",
             "value": round(uk_dividends, 2),
-            "explain": "Dividends whose payer has a GB ISIN"
+            "explain": "Ordinary dividends from UK-registered companies"
             + (f" ({', '.join(uk_div_symbols)})" if uk_div_symbols else "")
-            + ", gross. UK dividends carry no withholding; if one here shows tax "
-            "taken off it is a REIT property income distribution mislabelled as a "
-            "dividend — see the notice.",
+            + ", gross. UK dividends carry no withholding, so anything a UK payer "
+            "took tax off has been reclassified as a REIT property income "
+            "distribution and moved to box 17 — see the distributions table.",
         },
         {
             "form": "SA106",
@@ -159,11 +283,15 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "box": "foreign tax",
             "label": "Foreign tax taken off (treaty-limited)",
             "value": round(treaty_relief, 2),
-            "explain": "US withholding at the 15% UK–US treaty rate — claimable as "
-            "Foreign Tax Credit Relief against the UK dividend tax. Withholding "
-            "above 15% is not creditable.",
+            "explain": "Withholding capped at the treaty rate (15% under the UK–US "
+            "treaty) — claimable as Foreign Tax Credit Relief, which comes off the "
+            "UK tax due, not off the dividend figure above. Anything withheld above "
+            "the treaty rate is not creditable here; only the IRS can refund it. The "
+            "relief is further capped at the UK tax on this same income.",
         },
     ]
+    if interest_distributions <= 0:
+        sa_boxes = [b for b in sa_boxes if b["box"] != "interest"]
     if other_income > 0:
         parts = []
         if pid_total > 0:
@@ -265,7 +393,7 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
 
     rate_change = None
     if y.get("cgt_mid_year_change"):
-        rate_change = _gain_split(bundle, y["cgt_mid_year_change"]["date"])
+        rate_change = _gain_split(bundle, y, profile)
 
     cards = {
         "taxable_gain": {
@@ -275,7 +403,14 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         },
         "dividends_taxable": {
             "value": round(dividends_taxable, 2),
-            "sub": f"of £{dividends_total:,.2f} total, after allowance and treaty relief",
+            "sub": f"of £{dividends_total:,.2f} total, after the "
+            f"£{_f(y.get('dividend_allowance')):,.0f} dividend allowance"
+            + (
+                f" — £{treaty_relief:,.2f} of foreign tax comes off the tax due, "
+                "not off this figure"
+                if treaty_relief
+                else ""
+            ),
             "estimated_tax": profile["tax"]["dividend_tax"] if profile else None,
         },
         "uk_interest": {"value": round(uk_interest, 2)},
@@ -290,27 +425,32 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
 
     if profile:
         tx = profile["tax"]
+        non_cgt = tx["dividend_tax"] + tx["savings_tax"] + tx.get("other_income_tax", 0.0)
         tax_due = {
             "available": True,
-            "cgt": tx["cgt_estimate"],
+            "cgt": tx["cgt_total"],
+            "cgt_sa_at_pre_oct_rates": tx["sa_cgt_at_pre_oct_rates"],
+            "cgt_adjustment": tx["cgt_adjustment"],
+            "cgt_note": tx.get("cgt_note"),
             "dividends": tx["dividend_tax"],
+            "dividends_before_ftcr": tx["dividend_tax_before_ftcr"],
+            "ftcr": tx["ftcr"],
+            "foreign_tax_withheld": tx["foreign_tax_withheld"],
             "interest": tx["savings_tax"],
             "other_income": tx.get("other_income_tax", 0.0),
-            "total": round(
-                tx["cgt_estimate"]
-                + tx["dividend_tax"]
-                + tx["savings_tax"]
-                + tx.get("other_income_tax", 0.0),
-                2,
-            ),
+            # The headline bill. Payments on account look at `excluding_cgt`.
+            "total": round(non_cgt + tx["cgt_total"], 2),
+            "excluding_cgt": round(non_cgt, 2),
             "marginal_band": profile["bands"]["marginal_band"],
             "personal_allowance": profile["allowances"]["personal_allowance"],
             "psa": profile["allowances"]["psa"],
             "cgt_at_basic": tx["cgt_at_basic"],
             "cgt_at_higher": tx["cgt_at_higher"],
             "cgt_rates": y.get("cgt_rates_shares"),
+            "cgt_buckets": profile["cgt"]["buckets"],
             "dividend_allowance": y.get("dividend_allowance"),
             "cgt_allowance": y.get("cgt_allowance"),
+            "payments_on_account": profile["payments_on_account"],
         }
     else:
         tax_due = {"available": False}
@@ -321,6 +461,8 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
         "filing_deadline": tax_years.filing_deadline(tax_year).isoformat(),
         "cards": cards,
         "sa_boxes": sa_boxes,
+        "distributions": _distribution_rows(rows),
+        "distribution_totals": {k: v for k, v in inc.items() if k != "rows"},
         "rate_change_split": rate_change,
         "exempt_disposals": exempt_disposals,
         "warnings": warnings,
@@ -332,15 +474,48 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
     }
 
 
+def _distribution_rows(rows: list[dict]) -> list[dict]:
+    """The itemised distribution table: one line per payment, with what it was
+    classified as and why, for checking against the broker's statements."""
+    return [
+        {
+            "date": r["date"],
+            "symbol": r["symbol"],
+            "source": r["source"],
+            "kind": r["kind"],
+            "label": r["label"],
+            "taxed_as": r["taxed_as"],
+            "uses_dividend_allowance": r["uses_dividend_allowance"],
+            "currency": r["currency"],
+            "gross": str(r["gross"]) if r["gross"] is not None else None,
+            "fx_rate": str(r["fx_rate"]) if r["fx_rate"] is not None else None,
+            "gross_gbp": round(float(r["gross_gbp"]), 2),
+            "withheld_gbp": round(float(r["withheld_gbp"]), 2),
+            "treaty_relief_gbp": round(float(r["treaty_relief_gbp"]), 2),
+            "why": r["why"],
+        }
+        for r in rows
+    ]
+
+
 def summary_for_planner(bundle: dict) -> dict:
+    """What the planner and the tax profile need from a report run: income by
+    UK tax classification, and the chargeable disposals so capital gains can be
+    charged at the rate for their disposal date."""
     t = bundle["totals"]
+    inc = classified_income(bundle)
     return {
-        "dividends_total": _f(t["dividends_total"]),
-        "dividends_taxable": _f(t["dividends_taxable"]),
-        "uk_interest": _f(t["uk_interest"]),
-        "foreign_interest": _f(t["foreign_interest"]),
-        "other_income": _f(t.get("other_income")),
-        "other_income_tax": _f(t.get("other_income_tax")),
+        "dividends_total": inc["dividends_total"],
+        "uk_dividends": inc["uk_dividends"],
+        "foreign_dividends": inc["foreign_dividends"],
+        "foreign_dividend_tax": inc["foreign_dividend_tax"],
+        "foreign_dividend_treaty_relief": inc["foreign_dividend_treaty_relief"],
+        "uk_interest": inc["uk_interest"],
+        "foreign_interest": inc["foreign_interest"],
+        "interest_distributions": inc["interest_distributions"],
+        "other_income": inc["other_income"],
+        "other_income_tax": inc["other_income_tax"],
         "total_gain": _f(t["total_gain"]),
         "taxable_gain": _f(t["taxable_gain"]) if t["taxable_gain"] is not None else 0.0,
+        "disposals": chargeable_disposals(bundle),
     }

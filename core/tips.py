@@ -674,24 +674,29 @@ def allowance_overflow(ctx):
 
 
 def payments_on_account(ctx):
+    """Both TMA 1970 s59A conditions, with the arithmetic shown either way — a
+    big capital gain can push the headline bill well past £1,000 without any
+    payment on account being due, because CGT is never part of one."""
     profile, ty = ctx["profile"], ctx["tax_year"]
-    tx = profile["tax"]
-    untaxed = tx["dividend_tax"] + tx["savings_tax"] + max(0.0, tx.get("other_income_tax", 0.0))
-    if untaxed <= 1000:
+    poa = profile["payments_on_account"]
+    if not poa["required"]:
         return None
     deadline = tax_years.filing_deadline(ty)
     return _tip(
         "payments_on_account",
-        "Payments on account will likely apply",
-        f"Expect HMRC to ask for ~£{untaxed / 2:,.0f} on 31 Jan and again on 31 Jul "
-        "as advance payments towards next year, on top of this year's bill. "
+        "Payments on account will apply",
+        f"Expect HMRC to ask for £{poa['each_instalment']:,.0f} on 31 Jan and again on "
+        "31 Jul as advance payments towards next year, on top of this year's bill. "
         "Budget for it; you can apply to reduce them if next year's income will be lower.",
-        "When more than £1,000 of tax isn't collected at source, HMRC charges two "
-        "advance instalments (50% each) based on this year's liability. "
-        "CGT is excluded from payments on account.",
+        "Payments on account are due when the Self Assessment balancing payment "
+        f"excluding capital gains tax is over £{poa['threshold']:,.0f} "
+        f"(here {_gbp(poa['liability_excluding_cgt'])}) and less than 80% of the year's "
+        f"income tax was collected at source (here {poa['percent_at_source']:.1f}%). "
+        "Capital gains tax is never part of a payment on account.",
         None,
         deadline=deadline.isoformat(),
         confidence="high",
+        detail=poa["explain"],
     )
 
 

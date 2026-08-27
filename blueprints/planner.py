@@ -41,6 +41,12 @@ def _invest_for(user_id: int, tax_year: int, inputs: dict) -> tuple[dict, dict |
     ):
         if inputs.get(f"override_{key}") not in (None, ""):
             invest[key] = float(inputs[f"override_{key}"])
+    # A typed-in gain figure replaces the report's disposals outright — keeping
+    # them would silently win over the override when the tax is computed.
+    if inputs.get("override_taxable_gain") not in (None, "") or inputs.get(
+        "override_total_gain"
+    ) not in (None, ""):
+        invest.pop("disposals", None)
     return invest, bundle
 
 
@@ -88,6 +94,7 @@ def planner(tax_year: int):
             "year": {
                 k: year[k]
                 for k in (
+                    "cgt_mid_year_change",
                     "personal_allowance",
                     "pa_taper_start",
                     "basic_band",
@@ -98,6 +105,7 @@ def planner(tax_year: int):
                     "dividend_rates",
                     "cgt_rates_shares",
                 )
+                if k in year
             },
         }
     )

@@ -180,3 +180,44 @@ def test_calculate_other_income_and_exempt_security(tmp_path):
         {"symbol": "GLT", "isin": None, "kind": "manual", "title": None, "source": "configured"}
     ]
     assert bundle["exempt"]["ais_applies"] is False
+
+
+_RAW_DISTRIBUTIONS = """date,action,symbol,quantity,price,fees,currency
+2023-04-10,TRANSFER,,1,5000,0,GBP
+2023-05-01,BUY,VGOV,100,10.00,0,GBP
+2023-05-01,BUY,ULVR,100,10.00,0,GBP
+2023-08-15,DIVIDEND,VGOV,1,45.00,0,GBP
+2023-08-15,DIVIDEND,ULVR,1,60.00,0,GBP
+"""
+
+
+def test_bond_fund_distributions_are_taxed_as_interest_not_dividends(tmp_path):
+    """VGOV is a gilt fund: the engine must be told so, or its distribution is
+    counted as a dividend and eats the dividend allowance."""
+    paths.ensure_dirs()
+    work_dir = str(tmp_path / "work")
+    os.makedirs(work_dir)
+    raw = tmp_path / "raw.csv"
+    raw.write_text(_RAW_DISTRIBUTIONS)
+    job = {
+        "mode": "calculate",
+        "tax_year": 2023,
+        "files": {"raw": str(raw)},
+        "spin_offs": {},
+        "exchange_rates_file": str(tmp_path / "rates.csv"),
+        "isin_translation_file": str(tmp_path / "isin.csv"),
+        "work_dir": work_dir,
+        "pdf_path": None,
+        "balance_check": True,
+    }
+    result = _run_worker(job, work_dir)
+    assert result["ok"], result
+    bundle = result["bundle"]
+    assert Decimal(bundle["totals"]["dividends_total"]) == 60
+    by_symbol = {d["symbol"]: d for d in bundle["dividends"]}
+    assert by_symbol["VGOV"]["is_interest"] is True
+    assert by_symbol["ULVR"]["is_interest"] is False
+    # The audit columns: currency and the rate used (1 for a GBP payment).
+    assert by_symbol["ULVR"]["currency"] == "GBP"
+    assert by_symbol["ULVR"]["fx_rate"] == "1"
+    assert Decimal(by_symbol["ULVR"]["gross"]) == 60
