@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from decimal import Decimal
 
-from core import estimator
+from core import estimator, tax_years
 from core.estimator import ZERO, dec
 
 # A "tax deducted" figure this far from what the tax code implies is worth
@@ -209,11 +209,14 @@ def paye_tax(pay: Decimal, code: TaxCode, year: dict) -> Decimal:
     # always, whatever rounding mode the report is showing, because the point is
     # to reproduce what the employer's payroll actually did.
     taxable = estimator.round_gain_down(max(ZERO, pay - allowance))
+    # No band extension: payroll knows nothing about relief-at-source pension
+    # contributions or Gift Aid, so it charges against the year's plain limits.
+    bands = tax_years.bands_for(year)
     slices, _ = estimator.band_slices(
         taxable,
         ZERO,
-        basic_limit=dec(year["basic_band"]),
-        higher_limit=dec(year["higher_rate_limit"]),
+        basic_limit=bands.basic_limit,
+        higher_limit=bands.higher_limit,
         rates=year["income_rates"],
     )
     return estimator.slices_tax(slices)
@@ -323,7 +326,7 @@ def explain_shortfall(
             f"£{implied:,.2f}, which is what your P60 says was deducted. The allowance "
             "tapers away £1 for every £2 of income over "
             f"£{dec(year['pa_taper_start']):,.0f} and is nil from "
-            f"£{dec(year['additional_threshold']):,.0f}, so the code was out of date the "
+            f"£{dec(year['pa_taper_end']):,.0f}, so the code was out of date the "
             "moment your pay passed that point."
         )
     elif explains:

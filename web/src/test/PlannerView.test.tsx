@@ -100,14 +100,25 @@ const planner: PlannerData = {
   year: {
     personal_allowance: 12570,
     pa_taper_start: 100000,
+    pa_taper_end: 125140,
     basic_band: 37700,
-    additional_threshold: 125140,
+    higher_rate_limit: 125140,
     cgt_allowance: 3000,
     dividend_allowance: 500,
     income_rates: { basic: 0.2, higher: 0.4, additional: 0.45 },
     dividend_rates: { basic: 0.0875, higher: 0.3375, additional: 0.3935 },
     cgt_rates_shares: { basic: 0.18, higher: 0.24 },
   },
+  year_parameters: [
+    {
+      title: 'Income tax bands (taxable income, after allowances)',
+      source: 'https://www.gov.uk/government/publications/rates-and-allowances-income-tax',
+      rows: [
+        { label: 'Additional rate above', value: 125140, kind: 'money' },
+        { label: 'Rates (basic / higher / additional)', value: '20% / 40% / 45%', kind: 'text' },
+      ],
+    },
+  ],
 }
 
 afterEach(() => vi.unstubAllGlobals())
@@ -156,4 +167,18 @@ test('the how-to steps stay folded away until the card is opened', async () => {
     'Ask payroll for a one-off AVC',
     'Pay it before 5 Apr',
   ])
+})
+
+test('the year parameters are on the page, with the gov.uk page they came from', async () => {
+  mockFetch()
+  render(<PlannerView year={2025} />)
+
+  // Folded away by default: the figures are for checking, not for reading every
+  // time. Opening the section shows them with their source.
+  const section = (await screen.findByText(/2025\/26 tax year parameters/)).closest('section')!
+  fireEvent.click(screen.getByText(/2025\/26 tax year parameters/))
+  expect(section.textContent).toContain('Additional rate above')
+  expect(section.textContent).toContain('£125,140')
+  expect(section.textContent).toContain('20% / 40% / 45%')
+  expect(section.querySelector('a[href*="gov.uk"]')).not.toBeNull()
 })

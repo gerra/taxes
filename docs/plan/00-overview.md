@@ -116,6 +116,13 @@ Each phase ends deployed and usable, not just merged.
 - **Tax content accuracy**: SA box numbers and allowance/rate figures change per tax
   year (e.g. the mid-year CGT rate change on 30 Oct 2024). All such constants live in
   one per-tax-year data file, verified against the actual HMRC forms during modules 4–5.
+  Adding a year means checking every figure against gov.uk and recording the URLs in
+  that year's `sources` — no figure is inherited from another year, because sharing one
+  "higher rate limit" across all of them is what put 2022/23's additional rate at
+  £125,140 instead of £150,000 and misclassified a higher rate taxpayer as additional
+  rate. `core/tax_years.py` self-checks the table at import and raises; the bills HMRC
+  has actually calculated are reproduced in `tests/test_filed_returns.py`, and the
+  parameters are shown in the Planner so they can be eyeballed against gov.uk.
 - **Privacy**: financial documents at rest on the box are Fernet-encrypted (module 3);
   `secrets/.env` never in git or rsync (fintrack pattern); this app is for the account
   owner only — not tax advice for others.

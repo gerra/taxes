@@ -19,8 +19,12 @@ export function num(value: string | number | null | undefined, decimals = 2): st
   return parseFloat(fixed).toLocaleString('en-GB', { maximumFractionDigits: decimals })
 }
 
+/** A tax rate. Fractional rates keep their decimals — a dividend rate shown as
+ *  "9%" instead of "8.75%", or "36%" instead of "35.75%", reads as a different
+ *  rate from the one the tax was computed at. */
 export function pct(value: number): string {
-  return `${(value * 100).toFixed(0)}%`
+  const points = value * 100
+  return `${Number(points.toFixed(2))}%`
 }
 
 export function shortDate(iso: string | null | undefined): string {

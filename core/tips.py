@@ -459,14 +459,16 @@ def pension_headroom(ctx):
 def sixty_percent_trap(ctx):
     y, profile, ty = ctx["year"], ctx["profile"], ctx["tax_year"]
     ani = profile["income"]["adjusted_net_income"]
-    if not (y["pa_taper_start"] < ani <= y["additional_threshold"]):
+    bands = tax_years.bands_for(y)
+    if not bands.in_pa_taper(ani):
         return None
-    excess = ani - y["pa_taper_start"]
+    taper_start, taper_end = (float(v) for v in bands.taper_zone)
+    excess = ani - taper_start
     lab = tax_years.label(ty)
     pa_lost = min(excess / 2, y["personal_allowance"])
-    extra_tax = pa_lost * y["income_rates"]["higher"]
+    extra_tax = pa_lost * float(bands.income_rate(tax_years.HIGHER))
     why = (
-        "Between £100,000 and £125,140 each £2 of income removes £1 of personal "
+        f"Between £{taper_start:,.0f} and £{taper_end:,.0f} each £2 of income removes £1 of personal "
         "allowance, so the effective tax rate on this slice is ~60%. Relief on a "
         "contribution in this zone is correspondingly ~60%, not 40%. A contribution "
         "only counts for the year it is paid in — the one exception is Gift Aid, "
@@ -538,7 +540,9 @@ def cgt_harvest(ctx):
     holdings = []
     if bundle:
         holdings = [p["symbol"] for p in bundle.get("portfolio_eoy", [])][:6]
-    rate = y["cgt_rates_shares"]["higher"]
+    # The rate this taxpayer would actually pay on the gain, from their band —
+    # a basic rate taxpayer's gain is not saved at the higher rate.
+    rate = float(tax_years.bands_for(y).cgt_rate(ctx["profile"]["bands"]["marginal_band"]))
     lab = tax_years.label(ty)
     why = (
         f"Gains within the £{y['cgt_allowance']:,.0f} annual exempt amount are "

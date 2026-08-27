@@ -21,7 +21,7 @@ still worth seeing, but it is a sub-total, not the bill."""
 
 from dataclasses import dataclass
 
-from core import estimator, self_assessment
+from core import estimator, self_assessment, tax_years
 
 
 @dataclass
@@ -32,12 +32,6 @@ class Slice:
     @property
     def tax(self) -> float:
         return self.amount * self.rate
-
-
-def _taper_pa(personal_allowance: float, taper_start: float, adjusted_net_income: float) -> float:
-    if adjusted_net_income <= taper_start:
-        return personal_allowance
-    return max(0.0, personal_allowance - (adjusted_net_income - taper_start) / 2)
 
 
 def _band_slices(
@@ -137,17 +131,19 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     total_income = non_savings + savings + dividends
     adjusted_net_income = max(0.0, total_income - sipp_gross - gift_aid_gross)
 
-    pa = _taper_pa(year["personal_allowance"], year["pa_taper_start"], adjusted_net_income)
     band_extension = sipp_gross + gift_aid_gross
     # Both limits are measured in taxable (post-allowance) income, per ITA 2007
     # s10, and neither moves with the allowance: someone whose allowance has
     # tapered to nil still gets £37,700 at the basic rate and pays the
-    # additional rate only above £125,140 of taxable income. Deducting the
-    # standard allowance from the higher rate limit — as this did before the
+    # additional rate only above the year's higher rate limit of taxable income.
+    # Deducting the standard allowance from that limit — as this did before the
     # PAYE reconciliation went in — moved £12,570 of a £220k salary from 40% to
-    # 45% and overstated the tax on it by about £628.
-    basic_top = year["basic_band"] + band_extension
-    additional_top = year["higher_rate_limit"] + band_extension
+    # 45% and overstated the tax on it by about £628. Where the limits are, and
+    # which band anything lands in, comes from the year table via `bands`.
+    bands = tax_years.bands_for(year, band_extension)
+    pa = float(bands.personal_allowance(adjusted_net_income))
+    basic_top = float(bands.basic_limit)
+    additional_top = float(bands.higher_limit)
 
     # Allocate PA: non-savings first, then savings, then dividends
     pa_left = pa
@@ -175,10 +171,8 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     # Savings: starting rate band (0%) shrinks £-for-£ with taxable non-savings income,
     # then the PSA (0%) sized by the band the savings income falls into.
     starting_band = max(0.0, year["starting_rate_savings_band"] - taxable_non_savings)
-    band_at_floor = (
-        "basic" if floor < basic_top else "higher" if floor < additional_top else "additional"
-    )
-    psa = year["psa"][band_at_floor]
+    band_at_floor = bands.band_at(floor)
+    psa = float(bands.psa(band_at_floor))
     savings_at_zero = min(taxable_savings, starting_band + psa)
     floor += savings_at_zero
     sv_slices, floor = _band_slices(
@@ -239,7 +233,7 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
 
     # CGT on shares: gains stack on top of taxable income, and the rate depends
     # on the disposal date in a year whose rates changed mid-year.
-    basic_room = max(0.0, basic_top - taxable_income_total)
+    basic_room = float(bands.basic_room(taxable_income_total))
     cgt = _cgt(invest, year, basic_room)
     cgt_total = float(cgt["cgt_total"])
     cgt_at_basic = float(sum(b["at_basic"] for b in cgt["buckets"]))
@@ -266,12 +260,9 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     sa = self_assessment.compute_for(inputs, year, invest)
     poa = sa["payments_on_account"]
 
-    if taxable_income_total > basic_top:
-        marginal_band = "additional" if taxable_income_total > additional_top else "higher"
-    else:
-        marginal_band = "basic"
-    marginal_rate = year["income_rates"][marginal_band]
-    in_pa_taper = year["pa_taper_start"] < adjusted_net_income <= year["additional_threshold"]
+    marginal_band = bands.band_at(taxable_income_total)
+    marginal_rate = float(bands.income_rate(marginal_band))
+    in_pa_taper = bands.in_pa_taper(adjusted_net_income)
     # approx: inside the taper each £1 of extra income also costs 50p of PA → ~60%
     effective_marginal = 0.60 if in_pa_taper else marginal_rate
 

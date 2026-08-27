@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import type { EmploymentInput, PlannerData, SelfAssessment, Tip } from '../types'
+import Section from '../components/Section'
+import type {
+  EmploymentInput,
+  PlannerData,
+  SelfAssessment,
+  Tip,
+  YearParameterGroup,
+} from '../types'
 import { currentTaxYear, gbp, pct, shortDate, taxYearLabel } from '../utils/format'
 
 // Input fields for the planner; prior-year pension rows are named after the
@@ -473,6 +480,7 @@ export default function PlannerView({ year }: { year: number }) {
           )}
           <BillSummary sa={data.profile.self_assessment} />
           <ProfileSummary data={data} />
+          <YearParameters groups={data.year_parameters} label={data.label} />
           <h3>Tips</h3>
           {data.tips.length === 0 && (
             <p className="muted">Nothing actionable found — add your income figures above.</p>
@@ -527,7 +535,7 @@ function ProfileSummary({ data }: { data: PlannerData }) {
   const marginalTip =
     `Your taxable income (${gbp(p.bands.taxable_income, 0)}) sits in the ${p.bands.marginal_band} band → ${pct(p.marginal.income_rate)} relief on pension contributions.` +
     (p.bands.in_pa_taper
-      ? `\n\nYou're in the £100,000–£125,140 zone where each £2 also restores £1 of personal allowance, so the effective relief is ~60%.`
+      ? `\n\nYou're in the ${gbp(y.pa_taper_start, 0)}–${gbp(y.pa_taper_end, 0)} zone where each £2 also restores £1 of personal allowance, so the effective relief is ~60%.`
       : '')
   return (
     <div className="cards-row">
@@ -563,6 +571,55 @@ function ProfileSummary({ data }: { data: PlannerData }) {
         Hover any card to see exactly how it was computed.
       </p>
     </div>
+  )
+}
+
+/** Every allowance, threshold and rate the year's figures were computed from,
+ *  with the gov.uk page each group was checked against.
+ *
+ *  It is built server-side from the year table itself rather than restated
+ *  here, so what this shows is what the bill was actually computed with — the
+ *  point of the panel is to make a wrong parameter visible without reading the
+ *  source, which is how 2022/23 ran for a year with the wrong additional rate
+ *  threshold. */
+function YearParameters({ groups, label }: { groups: YearParameterGroup[] | null; label: string }) {
+  if (!groups?.length) return null
+  return (
+    <Section
+      id="year-parameters"
+      title={`${label} tax year parameters`}
+      meta="what these figures were computed with"
+      defaultOpen={false}
+    >
+      <p className="muted small">
+        Checked against gov.uk on 27 Aug 2026. Each group links to the page it came from — worth a
+        look when a figure in the bill seems off by a band.
+      </p>
+      <div className="year-params">
+        {groups.map((g) => (
+          <div key={g.title}>
+            <h4>
+              {g.title}{' '}
+              <a className="small" href={g.source} target="_blank" rel="noreferrer">
+                source
+              </a>
+            </h4>
+            <table className="sa-table">
+              <tbody>
+                {g.rows.map((r) => (
+                  <tr key={r.label}>
+                    <td>{r.label}</td>
+                    <td className="num">
+                      {r.kind === 'money' ? gbp(r.value as number, 0) : r.value}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+    </Section>
   )
 }
 

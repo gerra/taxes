@@ -239,11 +239,13 @@ def compute(inputs: Inputs) -> dict:
     band_extension = pension_gross + gift_aid_gross
     adjusted_net_income = max(ZERO, total_income - band_extension)
 
-    personal_allowance = estimator.taper_allowance(
-        dec(year["personal_allowance"]), dec(year["pa_taper_start"]), adjusted_net_income
-    )
-    basic_limit = dec(year["basic_band"]) + band_extension
-    higher_limit = dec(year["higher_rate_limit"]) + band_extension
+    # Where this taxpayer's band boundaries sit, and the allowance they leave.
+    # Every threshold comparison below goes through `bands`, so the year table
+    # is the only place a boundary is written down.
+    bands = tax_years.bands_for(year, band_extension)
+    personal_allowance = bands.personal_allowance(adjusted_net_income)
+    basic_limit = bands.basic_limit
+    higher_limit = bands.higher_limit
 
     # The allowance goes against non-savings income first, then savings, then
     # dividends — HMRC's order, and the one that leaves the taxpayer best off.
@@ -266,8 +268,8 @@ def compute(inputs: Inputs) -> dict:
     # personal savings allowance is sized by the band the savings income lands
     # in: £1,000 basic, £500 higher, nil additional.
     starting_band = max(ZERO, dec(year["starting_rate_savings_band"]) - taxable_non_savings)
-    savings_band = estimator.band_at(floor, basic_limit, higher_limit)
-    psa = dec(year["psa"][savings_band])
+    savings_band = bands.band_at(floor)
+    psa = bands.psa(savings_band)
     savings_at_zero = min(taxable_savings, starting_band + psa)
     floor += savings_at_zero
     sv_slices, floor = estimator.band_slices(
@@ -381,7 +383,7 @@ def compute(inputs: Inputs) -> dict:
     income_tax_shortfall = income_tax_total - at_source_for_bill - ftcr
 
     # ── Capital gains ────────────────────────────────────────────────────────
-    cgt = _capital_gains(inputs, year, basic_room=max(ZERO, basic_limit - floor))
+    cgt = _capital_gains(inputs, year, basic_room=bands.basic_room(floor))
     cgt_total = cgt["cgt_total"]
 
     # ── The bill ─────────────────────────────────────────────────────────────
@@ -487,8 +489,8 @@ def compute(inputs: Inputs) -> dict:
             "taxable_savings": taxable_savings,
             "taxable_dividends": taxable_dividends,
             "taxable_income": taxable_non_savings + taxable_savings + taxable_dividends,
-            "cgt_basic_room": max(ZERO, basic_limit - floor),
-            "marginal_band": estimator.band_at(floor, basic_limit, higher_limit),
+            "cgt_basic_room": bands.basic_room(floor),
+            "marginal_band": bands.band_at(floor),
         },
         "income_tax": {
             "non_savings": non_savings_tax,

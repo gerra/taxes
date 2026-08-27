@@ -2212,3 +2212,28 @@ select:focus {
   padding: 10px 14px;
   color: rgba(255, 255, 255, 0.92);
 }
+
+/* ── Tax year parameters ───────────────────────────────────────────────── */
+/* Two columns where there is room: five short tables read better side by side
+   than as one long scroll. */
+
+.year-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.year-params h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.year-params h4 a {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}

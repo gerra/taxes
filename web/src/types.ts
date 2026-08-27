@@ -628,14 +628,27 @@ export interface PlannerData {
     cgt_mid_year_change?: { date: string; rates_before: { basic: number; higher: number } }
     personal_allowance: number
     pa_taper_start: number
+    /** Income at which the tapered personal allowance reaches nil. */
+    pa_taper_end: number
     basic_band: number
-    additional_threshold: number
+    /** Taxable income above which the additional rate starts — £150,000 in
+     *  2022/23, £125,140 from 2023/24. */
+    higher_rate_limit: number
     cgt_allowance: number
     dividend_allowance: number
     income_rates: Record<string, number>
     dividend_rates: Record<string, number>
     cgt_rates_shares: { basic: number; higher: number }
   }
+  /** The whole year table, grouped and sourced, for checking against gov.uk. */
+  year_parameters: YearParameterGroup[] | null
+}
+
+export interface YearParameterGroup {
+  title: string
+  /** The gov.uk page these figures were checked against. */
+  source: string
+  rows: { label: string; value: number | string; kind: 'money' | 'text' }[]
 }
 
 export interface MappingNeeded {

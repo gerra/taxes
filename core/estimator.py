@@ -255,25 +255,11 @@ def slices_tax(slices: list[dict]) -> Decimal:
     return sum((s["tax"] for s in slices), ZERO)
 
 
-def band_at(floor: Decimal, basic_limit: Decimal, higher_limit: Decimal) -> str:
-    """Which band the next pound stacked on `floor` falls into."""
-    if floor < dec(basic_limit):
-        return BASIC
-    return HIGHER if floor < dec(higher_limit) else ADDITIONAL
-
-
-def taper_allowance(
-    personal_allowance: Decimal, taper_start: Decimal, adjusted_net_income: Decimal
-) -> Decimal:
-    """The personal allowance after the ITA 2007 s35(2)-(3) taper: £1 less for
-    every £2 of adjusted net income above the threshold, nil once the allowance
-    is used up (£125,140 while the allowance is £12,570 and the threshold
-    £100,000)."""
-    pa = dec(personal_allowance)
-    over = dec(adjusted_net_income) - dec(taper_start)
-    if over <= ZERO:
-        return pa
-    return max(ZERO, pa - over / 2)
+# Which band an amount lands in, and the personal allowance taper, are not here:
+# they are decided once, from the year table, by `core.tax_years.Bands`. This
+# module charges slices against limits it is handed and never works out where a
+# limit is — that separation is what stops a year whose thresholds differ from
+# being right in one calculation and wrong in another.
 
 
 def _fmt_date(iso: str) -> str:

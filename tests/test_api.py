@@ -48,6 +48,16 @@ def test_planner_without_report(auth_client):
     assert any(t["id"] == "sixty_trap" for t in data["tips"])
 
 
+def test_planner_sends_the_year_parameters_for_checking(auth_client):
+    """The year table reaches the UI so the figures a bill was computed with can
+    be eyeballed against gov.uk without reading the source."""
+    data = auth_client.get("/api/planner/2025").get_json()
+    rows = {r["label"]: r["value"] for g in data["year_parameters"] for r in g["rows"]}
+    assert rows["Additional rate above"] == 125140
+    assert rows["Annual exempt amount"] == 3000
+    assert data["year"]["higher_rate_limit"] == 125140
+
+
 def test_planner_pension_uses_prior_year_planners(auth_client):
     """Prior years' saved planners supply the income for their taper test; the
     selected year's "Pension total, YYYY/YY" boxes supply the pension inputs."""

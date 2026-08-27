@@ -3,6 +3,7 @@ import {
   gbp,
   lastElapsedTaxYear,
   num,
+  pct,
   shortDate,
   taxYearLabel,
 } from '../utils/format'
@@ -41,4 +42,11 @@ test('currentTaxYear is the running one, a year ahead of the last filed', () => 
 test('taxYearLabel pads the second year', () => {
   expect(taxYearLabel(2024)).toBe('2024/25')
   expect(taxYearLabel(2099)).toBe('2099/00')
+})
+
+test('pct keeps the decimals of a fractional rate', () => {
+  expect(pct(0.2)).toBe('20%')
+  expect(pct(0.0875)).toBe('8.75%')
+  expect(pct(0.3575)).toBe('35.75%')
+  expect(pct(0.3935)).toBe('39.35%')
 })

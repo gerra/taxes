@@ -169,8 +169,9 @@ def planner(tax_year: int):
                     "cgt_mid_year_change",
                     "personal_allowance",
                     "pa_taper_start",
+                    "pa_taper_end",
                     "basic_band",
-                    "additional_threshold",
+                    "higher_rate_limit",
                     "cgt_allowance",
                     "dividend_allowance",
                     "income_rates",
@@ -179,5 +180,8 @@ def planner(tax_year: int):
                 )
                 if k in year
             },
+            # The whole parameter table for the year, grouped and sourced, so it
+            # can be checked against gov.uk in the UI rather than in the source.
+            "year_parameters": tax_years.parameters(tax_year),
         }
     )
