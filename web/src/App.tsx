@@ -4,11 +4,12 @@ import { useAuth } from './hooks/useAuth'
 import { currentTaxYear, lastElapsedTaxYear, taxYearLabel } from './utils/format'
 import AdminView from './views/AdminView'
 import DocumentsView from './views/DocumentsView'
+import HistoryView from './views/HistoryView'
 import LoginView from './views/LoginView'
 import PlannerView from './views/PlannerView'
 import ReportView from './views/ReportView'
 
-const TABS = ['Documents', 'Report', 'Planner'] as const
+const TABS = ['Documents', 'Report', 'Planner', 'History'] as const
 type Tab = (typeof TABS)[number] | 'Admin'
 
 // The year the app opens on is the last finished one — that's the one you file.
@@ -90,6 +91,8 @@ export default function App() {
         {tab === 'Documents' && <DocumentsView year={year} />}
         {tab === 'Report' && <ReportView year={year} />}
         {tab === 'Planner' && <PlannerView year={year} />}
+        {/* History spans every year, so the year picker doesn't apply to it. */}
+        {tab === 'History' && <HistoryView />}
         {tab === 'Admin' && user.is_admin && <AdminView onPendingCount={setPending} />}
       </main>
       <footer className="disclaimer">

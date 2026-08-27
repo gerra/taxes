@@ -8,7 +8,14 @@ Every figure gets a short explanation: what it is, how it was computed here,
 where it goes.
 
 The tax rules themselves live in `core.estimator`; this module only decides
-what is shown and says where each figure goes on the return."""
+what is shown and says where each figure goes on the return.
+
+The headline is the whole Self Assessment bill (`tax_due.self_assessment`),
+computed by `core.self_assessment` from the planner's P60 figures plus these
+investment figures. The investment-only sub-total — what this page showed as
+its headline before the PAYE reconciliation existed — stays alongside it, since
+the difference between the two is PAYE catch-up on salary and is worth seeing
+rather than hiding."""
 
 from datetime import date
 from decimal import Decimal
@@ -451,6 +458,12 @@ def build_view(bundle: dict, tax_year: int, profile: dict | None) -> dict:
             "dividend_allowance": y.get("dividend_allowance"),
             "cgt_allowance": y.get("cgt_allowance"),
             "payments_on_account": profile["payments_on_account"],
+            # The whole Self Assessment bill: the investment figures above plus
+            # whatever PAYE under- or over-collected on salary. `reconciled`
+            # says whether P60 figures were entered; when they weren't, the
+            # headline falls back to the investment-only sub-total and carries
+            # the caveat that says so.
+            "self_assessment": profile["self_assessment"],
         }
     else:
         tax_due = {"available": False}
@@ -517,5 +530,9 @@ def summary_for_planner(bundle: dict) -> dict:
         "other_income_tax": inc["other_income_tax"],
         "total_gain": _f(t["total_gain"]),
         "taxable_gain": _f(t["taxable_gain"]) if t["taxable_gain"] is not None else 0.0,
+        # The year's losses to the penny, so the bill can check a loss typed on
+        # the return against them: HMRC rounds losses UP, and entering the
+        # rounded-down figure quietly gives away up to £1 of relief.
+        "losses": abs(_f(t["capital_loss"])),
         "disposals": chargeable_disposals(bundle),
     }

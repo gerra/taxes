@@ -8,11 +8,20 @@ savings → dividends → capital gains. Deliberate simplifications are marked
 Everything that needs the tax rules themselves rather than the band stacking —
 capital gains by disposal date, foreign tax credit relief, the payments-on-
 account test — lives in `core.estimator`; this module supplies the band
-positions it needs and converts the result to the floats the API sends."""
+positions it needs and converts the result to the floats the API sends.
+
+What this module's `tax` block reports is the tax on INVESTMENT income at your
+marginal position: dividends, interest and gains, on the assumption that
+employment tax was collected correctly through PAYE. That assumption is often
+wrong, and the whole Self Assessment bill — including what PAYE under- or
+over-collected on salary — is computed by `core.self_assessment` and carried
+here under `self_assessment`. The two are kept side by side deliberately: the
+investment-only figure is what this tool used to show as its headline and is
+still worth seeing, but it is a sub-total, not the bill."""
 
 from dataclasses import dataclass
 
-from core import estimator
+from core import estimator, self_assessment
 
 
 @dataclass
@@ -130,8 +139,15 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
 
     pa = _taper_pa(year["personal_allowance"], year["pa_taper_start"], adjusted_net_income)
     band_extension = sipp_gross + gift_aid_gross
-    basic_top = year["basic_band"] + band_extension  # on taxable (post-PA) income
-    additional_top = (year["additional_threshold"] - year["personal_allowance"]) + band_extension
+    # Both limits are measured in taxable (post-allowance) income, per ITA 2007
+    # s10, and neither moves with the allowance: someone whose allowance has
+    # tapered to nil still gets £37,700 at the basic rate and pays the
+    # additional rate only above £125,140 of taxable income. Deducting the
+    # standard allowance from the higher rate limit — as this did before the
+    # PAYE reconciliation went in — moved £12,570 of a £220k salary from 40% to
+    # 45% and overstated the tax on it by about £628.
+    basic_top = year["basic_band"] + band_extension
+    additional_top = year["higher_rate_limit"] + band_extension
 
     # Allocate PA: non-savings first, then savings, then dividends
     pa_left = pa
@@ -242,16 +258,13 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
     non_savings_tax = sum(s.tax for s in ns_slices)
     income_tax_total = non_savings_tax + savings_tax + dividend_tax
 
-    # Payments on account: the balancing payment, capital gains tax excluded.
-    at_source = non_savings_tax - other_income_gross_tax + report_other_credit
-    liability_excluding_cgt = savings_tax + dividend_tax + other_income_tax
-    poa = estimator.payments_on_account(
-        liability_excluding_cgt=estimator.dec(liability_excluding_cgt),
-        tax_collected_at_source=estimator.dec(at_source),
-        total_liability_excluding_cgt=estimator.dec(
-            non_savings_tax + savings_tax + dividend_tax_gross - relief
-        ),
-    )
+    # The whole bill, PAYE reconciliation included. It is computed from the same
+    # planner inputs and report summary, on Decimals and with HMRC's rounding,
+    # and it owns the payments-on-account test: that test needs the real
+    # balancing payment (the income tax shortfall after PAYE), which nothing in
+    # this module's investment-only view can see.
+    sa = self_assessment.compute_for(inputs, year, invest)
+    poa = sa["payments_on_account"]
 
     if taxable_income_total > basic_top:
         marginal_band = "additional" if taxable_income_total > additional_top else "higher"
@@ -308,9 +321,17 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
             "cgt_at_basic": round(cgt_at_basic, 2),
             "cgt_at_higher": round(cgt_at_higher, 2),
             "cgt_note": cgt_note,
-            "total_sa": round(liability_excluding_cgt + cgt_total, 2),
+            # Tax on investment income alone — the old headline, now a
+            # sub-total, and taken from the bill's own computation so the two
+            # figures on the page cannot drift apart over a rounding rule.
+            # `sa_bill` is what the return will actually ask for, PAYE
+            # under-collection included.
+            "investment_only": round(float(sa["investment_only"]), 2),
+            "sa_bill": round(float(sa["sa_bill"]), 2),
+            "reconciled": sa["reconciled"],
         },
         "cgt": _cgt_view(cgt),
+        "self_assessment": self_assessment.to_json(sa),
         "payments_on_account": {
             "required": poa["required"],
             "threshold": float(poa["threshold"]),
@@ -320,6 +341,9 @@ def build_profile(inputs: dict, year: dict, invest: dict) -> dict:
             "percent_at_source": round(float(poa["percent_at_source"]), 2),
             "under_80_percent_at_source": poa["under_80_percent_at_source"],
             "each_instalment": round(float(poa["each_instalment"]), 2),
+            # True when no P60 was entered, so PAYE was assumed to have
+            # collected the right tax rather than checked against one.
+            "assumed_paye": poa["assumed_paye"],
             "explain": poa["explain"],
         },
         "marginal": {

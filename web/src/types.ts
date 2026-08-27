@@ -247,6 +247,8 @@ export interface PaymentsOnAccount {
   under_80_percent_at_source: boolean
   each_instalment: number
   explain: string
+  /** True when no P60 was entered, so PAYE was assumed correct rather than checked. */
+  assumed_paye?: boolean
 }
 
 /** The mid-year CGT rate change and the box 51 adjustment it forces. */
@@ -394,8 +396,127 @@ export interface CgtBucket {
   tax: number
 }
 
+/** One P60. Pay and tax deducted come off the form; the code only explains. */
+export interface EmploymentInput {
+  name?: string
+  pay?: number
+  tax_deducted?: number
+  tax_code?: string
+  student_loan_deducted?: number
+}
+
+/** A line of the Self Assessment bill. They sum to the row keyed "total". */
+export interface BillRow {
+  key: string
+  label: string
+  amount: number
+  explain: string
+  included: boolean
+  total?: boolean
+}
+
+export interface TaxCodeExplanation {
+  code: {
+    code: string
+    allowance: string | null
+    flat_rate: string | null
+    describe: string
+    usable: boolean
+    problem: string | null
+  }
+  implied_tax: number | null
+  actual_tax?: number
+  gap?: number
+  explains: boolean
+  message: string
+}
+
+export interface StudentLoan {
+  plan: string
+  available: boolean
+  label?: string
+  threshold?: number
+  rate?: number
+  total_due?: number
+  deducted_via_paye?: number
+  balance?: number
+  explain: string
+}
+
+/** The whole bill: investment income plus whatever PAYE got wrong on salary. */
+export interface SelfAssessment {
+  /** False when no P60 was entered — the headline falls back to investments. */
+  reconciled: boolean
+  rounding_mode: 'hmrc' | 'exact'
+  tax_year: number
+  label: string
+  due_date: string
+  income: Record<string, number>
+  allowances: Record<string, number>
+  bands: Record<string, number | string>
+  income_tax: {
+    non_savings: number
+    savings: number
+    dividends_gross: number
+    dividends: number
+    total: number
+  }
+  at_source: {
+    paye: number
+    other_income: number
+    total: number
+    employments: {
+      name: string
+      pay: number
+      tax_deducted: number
+      student_loan_deducted: number
+      tax_code: string | null
+    }[]
+  }
+  ftcr: { total: number; dividends: number; interest: number }
+  income_tax_shortfall: number
+  employment_shortfall: number
+  already_paid: {
+    total: number
+    payments_on_account_made: number
+    tax_paid_on_gains: number
+  }
+  sa_bill: number
+  /** Today's figure: tax on investment income alone. */
+  investment_only: number
+  investment_only_parts: Record<string, number>
+  student_loan: StudentLoan | null
+  payments_on_account: PaymentsOnAccount
+  tax_code_explanation: TaxCodeExplanation | null
+  warnings: string[]
+  rows: BillRow[]
+}
+
+export interface HistoryYear {
+  tax_year: number
+  label: string
+  due_date: string
+  estimate: number
+  investment_only: number
+  employment_shortfall: number
+  reconciled: boolean
+  has_report: boolean
+  actual: number | null
+  difference: number | null
+  matches: boolean
+}
+
+export interface History {
+  years: HistoryYear[]
+  explain: string
+  unreconciled: number[]
+  mismatched: number[]
+}
+
 export interface TaxDue {
   available: boolean
+  /** The whole bill, PAYE reconciliation included. */
+  self_assessment?: SelfAssessment
   total?: number
   /** The bill without capital gains tax — what the payments-on-account test uses. */
   excluding_cgt?: number
@@ -479,7 +600,11 @@ export interface PlannerData {
       /** SA108 box 51: the extra due on post-30-Oct disposals. */
       cgt_adjustment: number
       cgt_note: string | null
-      total_sa: number
+      /** Investment income only — the old headline, now a sub-total. */
+      investment_only: number
+      /** What the return will actually ask for, PAYE catch-up included. */
+      sa_bill: number
+      reconciled: boolean
     }
     cgt: {
       total_gain: number
@@ -494,6 +619,7 @@ export interface PlannerData {
       buckets: CgtBucket[]
     }
     payments_on_account: PaymentsOnAccount
+    self_assessment: SelfAssessment
     marginal: { income_rate: number; effective_rate: number }
   }
   tips: Tip[]

@@ -257,8 +257,9 @@ def test_payments_on_account_exclude_cgt(profile):
     poa = profile["payments_on_account"]
     assert poa["required"] is False
     assert poa["each_instalment"] == pytest.approx(0)
-    # The headline bill, CGT included, is over £1,000 — and must not trigger it.
-    assert profile["tax"]["total_sa"] > 1000
+    # The tax on investment income, CGT included, is over £1,000 — and must not
+    # trigger it, because the balancing payment the test looks at excludes CGT.
+    assert profile["tax"]["investment_only"] > 1000
     assert poa["liability_excluding_cgt"] < 1000
 
 

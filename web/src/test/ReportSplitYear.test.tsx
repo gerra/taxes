@@ -52,7 +52,9 @@ test('the rate-change banner says a box 51 adjustment is needed and how much', a
 
 test('capital gains are shown at both rates, not one', async () => {
   await renderReport()
-  const row = [...document.querySelectorAll('.total-breakdown > div')].find((d) =>
+  // The bill card also has a "Capital gains" row; the rate split lives on the
+  // investment-income card behind it.
+  const row = [...document.querySelectorAll('.investment-card .total-breakdown > div')].find((d) =>
     d.textContent?.startsWith('Capital gains'),
   )!
   expect(row.textContent).toContain('@ 20%')
@@ -64,11 +66,31 @@ test('payments on account show both conditions and exclude CGT', async () => {
   const note = screen.getByText(/Payments on account:/).closest('.total-note')!
   expect(note.textContent).toContain('none due')
   expect(note.textContent).toContain('Balancing payment over £1,000')
-  expect(note.textContent).toContain('£236.23')
+  // The balancing payment is income tax owed after everything collected at
+  // source, with each income source rounded down the way HMRC rounds it.
+  expect(note.textContent).toContain('£235.29')
   expect(note.textContent).toContain('Under 80% collected at source')
-  expect(note.textContent).toContain('capital gains tax excluded')
+  expect(note.textContent).toContain('capital gains tax and student loan excluded')
   // The old, wrong test compared the £1,000 threshold with the headline bill.
   expect(document.body.textContent).not.toContain('If this exceeds £1,000')
+})
+
+test('the balancing payment is not the tax on investment income', async () => {
+  await renderReport()
+  const note = screen.getByText(/Payments on account:/).closest('.total-note')!
+  // This fixture has no P60, so PAYE is assumed correct and the note says so
+  // rather than quietly presenting an assumption as a computed figure.
+  expect(note.textContent).toContain('No P60 entered')
+})
+
+test('without a P60 the headline is investment income and says what it excludes', async () => {
+  await renderReport()
+  expect(screen.getByText(/Estimated tax on investment income/)).toBeTruthy()
+  expect(document.body.textContent).toContain(
+    'Excludes any PAYE under- or over-collection on salary',
+  )
+  // The old headline claimed to be the Self Assessment bill outright.
+  expect(document.body.textContent).not.toContain('Estimated tax to pay via Self Assessment')
 })
 
 test('the distributions table classifies REITs and bond funds out of dividends', async () => {

@@ -620,7 +620,11 @@ function DistributionsTable({ rows }: { rows: DistributionRow[] }) {
   )
 }
 
-/** Both payments-on-account conditions, shown whichever way they come out. */
+/** Both payments-on-account conditions, shown whichever way they come out.
+ *
+ * The balancing payment is the income tax shortfall left after everything
+ * collected at source — PAYE included — not the tax on investment income. A
+ * salary whose PAYE under-collected moves both conditions. */
 function PaymentsOnAccountNote({ taxDue }: { taxDue: TaxDue }) {
   const poa = taxDue.payments_on_account
   if (!poa) return null
@@ -635,31 +639,96 @@ function PaymentsOnAccountNote({ taxDue }: { taxDue: TaxDue }) {
         <div>
           {mark(poa.over_threshold)} Balancing payment over {gbp(poa.threshold, 0)}
           <b>{gbp(poa.liability_excluding_cgt)}</b>
-          capital gains tax excluded
+          income tax owed after tax at source; capital gains tax and student loan excluded
         </div>
         <div>
           {mark(poa.under_80_percent_at_source)} Under 80% collected at source
           <b>{poa.percent_at_source.toFixed(1)}%</b>
-          PAYE and tax already withheld
+          {gbp(poa.tax_collected_at_source, 0)} of PAYE and tax withheld, against the year&rsquo;s
+          whole income tax liability
         </div>
       </div>
-      Capital gains tax is never part of a payment on account, so the {gbp(taxDue.total)} headline
-      above is not the figure this test looks at.
+      Capital gains tax is never part of a payment on account, so a big gain on its own never
+      triggers one.
+      {poa.assumed_paye && (
+        <>
+          {' '}
+          <b>
+            No P60 entered, so this assumes PAYE collected the right tax on your salary — enter it
+            to have both tests computed rather than assumed.
+          </b>
+        </>
+      )}
     </div>
   )
 }
 
+/** The bill: what the return will actually ask for. */
+function SelfAssessmentCard({ taxDue, deadline }: { taxDue: TaxDue; deadline: string }) {
+  const sa = taxDue.self_assessment
+  if (!sa) return null
+  const year = taxYearLabel(sa.tax_year)
+  const rows = sa.rows.filter((r) => !r.total && (r.included || r.amount !== 0))
+  return (
+    <div className="total-card">
+      <div>
+        <div className="stat-title">
+          {sa.reconciled
+            ? `Estimated Self Assessment bill for ${year}`
+            : `Estimated tax on investment income, ${year}`}
+        </div>
+        <div className="stat-value">{gbp(sa.reconciled ? sa.sa_bill : sa.investment_only)}</div>
+        <div className="muted small">due {shortDate(sa.due_date || deadline)}</div>
+      </div>
+      <div className="total-breakdown">
+        {rows.map((r) => (
+          <div key={r.key} title={r.explain}>
+            {r.label}
+            <b>{gbp(r.amount)}</b>
+            {r.key === 'employment' && !sa.reconciled ? 'not checked — no P60 entered' : ''}
+          </div>
+        ))}
+      </div>
+      {sa.reconciled && (
+        <div className="total-note">
+          <b>Investment income alone: {gbp(sa.investment_only)}</b> — the difference is PAYE
+          catch-up on your salary, collected through the return because your tax code did not
+          collect it during the year.
+        </div>
+      )}
+      {!sa.reconciled && (
+        <div className="total-note warn-note">
+          <b>Excludes any PAYE under- or over-collection on salary.</b> Enter your P60 figures in
+          the Planner tab to see the full bill. For an additional-rate salary the PAYE shortfall is
+          routinely larger than the whole investment-income figure above.
+        </div>
+      )}
+      {sa.tax_code_explanation && (
+        <div className="total-note">{sa.tax_code_explanation.message}</div>
+      )}
+      {sa.student_loan?.available && <div className="total-note">{sa.student_loan.explain}</div>}
+      {sa.warnings.map((w) => (
+        <div key={w} className="total-note warn-note">
+          {w}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** The headline bill, then the investment-income detail behind its sub-total. */
 function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline: string }) {
   if (!taxDue?.available) {
     return (
       <div className="total-card">
         <div>
-          <div className="stat-title">Estimated tax to pay</div>
+          <div className="stat-title">Estimated Self Assessment bill</div>
           <div className="stat-value">—</div>
         </div>
         <div className="total-note">
-          Enter your income (P60 pay, pension contributions) in the Planner tab — the tax on these
-          figures depends on your marginal rate, so it can't be estimated without it.
+          Enter your income in the Planner tab — your P60 pay and tax deducted, and any pension
+          contributions. Tax on these figures depends on your marginal rate, and what PAYE already
+          collected on your salary depends on your P60, so neither can be estimated without them.
         </div>
       </div>
     )
@@ -678,42 +747,73 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           .join(' + ')
       : 'within exempt amount'
   return (
-    <div className="total-card">
+    <>
+      <SelfAssessmentCard taxDue={taxDue} deadline={deadline} />
+      <InvestmentTaxCard taxDue={taxDue} deadline={deadline} cgtDetail={cgtDetail} />
+    </>
+  )
+}
+
+/** What the investment figures on this page cost: the sub-total behind the
+ * "Investment income alone" line on the bill above, broken out by source. */
+function InvestmentTaxCard({
+  taxDue,
+  deadline,
+  cgtDetail,
+}: {
+  taxDue: TaxDue
+  deadline: string
+  cgtDetail: string
+}) {
+  // Amounts come from the same computation as the bill above, so the two agree
+  // to the penny — including HMRC's rounding of each income source, which the
+  // whole-bill figures apply and a separately-computed card would not.
+  const parts = taxDue.self_assessment?.investment_only_parts
+  const total = taxDue.self_assessment?.investment_only ?? taxDue.total
+  return (
+    <div className="total-card investment-card">
       <div>
-        <div className="stat-title">Estimated tax to pay via Self Assessment</div>
-        <div className="stat-value">{gbp(taxDue.total)}</div>
+        <div className="stat-title">Of that, tax on investment income</div>
+        <div className="stat-value">{gbp(total)}</div>
       </div>
       <div className="total-breakdown">
         <div>
           Capital gains
-          <b>{gbp(taxDue.cgt)}</b>
+          <b>{gbp(parts?.cgt ?? taxDue.cgt)}</b>
           {cgtDetail}
         </div>
         <div>
           Dividends
-          <b>{gbp(taxDue.dividends)}</b>
+          <b>{gbp(parts?.dividends ?? taxDue.dividends)}</b>
           {(taxDue.ftcr ?? 0) > 0
             ? `${gbp(taxDue.dividends_before_ftcr)} after ${gbp(taxDue.dividend_allowance, 0)} allowance, less ${gbp(taxDue.ftcr)} foreign tax credit`
             : `after ${gbp(taxDue.dividend_allowance, 0)} allowance`}
         </div>
         <div>
           Interest
-          <b>{gbp(taxDue.interest)}</b>
+          <b>{gbp(parts?.interest ?? taxDue.interest)}</b>
           after {gbp(taxDue.psa, 0)} savings allowance
         </div>
-        {(taxDue.other_income ?? 0) !== 0 && (
+        {(parts?.other_income ?? taxDue.other_income ?? 0) !== 0 && (
           <div>
             Other UK income
-            <b>{gbp(taxDue.other_income)}</b>
+            <b>{gbp(parts?.other_income ?? taxDue.other_income)}</b>
             at your marginal rate, less tax already withheld
+          </div>
+        )}
+        {(parts?.tax_paid_on_gains ?? 0) > 0 && (
+          <div>
+            Already paid on gains
+            <b>{gbp(-(parts?.tax_paid_on_gains ?? 0))}</b>
+            through HMRC&rsquo;s real-time capital gains service
           </div>
         )}
       </div>
       {taxDue.cgt_note && <div className="total-note">{taxDue.cgt_note}</div>}
       <div className="total-note">
         On these investment figures only, at your {taxDue.marginal_band}-rate position (personal
-        allowance {gbp(taxDue.personal_allowance, 0)}). Employment tax is already collected via
-        PAYE. Due {shortDate(deadline)}.
+        allowance {gbp(taxDue.personal_allowance, 0)}). It excludes any PAYE under- or
+        over-collection on your salary — that sits in the bill above. Due {shortDate(deadline)}.
       </div>
       <PaymentsOnAccountNote taxDue={taxDue} />
     </div>
