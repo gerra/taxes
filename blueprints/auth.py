@@ -2,6 +2,7 @@
 access-request endpoints a not-yet-allowed visitor can use from the login page."""
 
 import logging
+import re
 import secrets
 
 import requests
@@ -100,6 +101,52 @@ def access_me():
     return jsonify(
         {"email": req["email"], "name": req["name"], "status": req["status"], "note": req["note"]}
     )
+
+
+# Deliberately loose — Google is the real check. This only keeps obvious junk
+# (and anything with a newline in it) out of the pending list.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+@bp.post("/api/access/request")
+def access_request():
+    """Ask for access from the login page WITHOUT signing in with Google first.
+
+    Public and unauthenticated, so the pending list is capped
+    (repo.MAX_PENDING_REQUESTS) — past that, requests are refused rather than
+    stored. The reply is the same whether the email is new, already waiting or
+    already allowed: it must not report who is on the allowed list.
+    """
+    body = request.get_json(silent=True) or {}
+    email = str(body.get("email") or "").strip().lower()[:254]
+    name = str(body.get("name") or "").strip()[:100]
+    note = str(body.get("note") or "").strip()[:500]
+    if not _EMAIL_RE.match(email):
+        return jsonify({"error": "That doesn’t look like an email address"}), 400
+
+    outcome = repo.request_access(email, name, note)
+    if outcome == "full":
+        _log.warning(
+            "access request from %s refused: %d requests already unanswered",
+            email,
+            repo.MAX_PENDING_REQUESTS,
+        )
+        return jsonify(
+            {
+                "error": "There are too many unanswered requests right now. "
+                "Try again in a few days, or reach the owner another way."
+            }
+        ), 429
+    if outcome == "created":
+        _log.warning(
+            "ACCESS REQUEST from %s (%s) — approve it in the Admin tab: %s",
+            email,
+            name or "no name",
+            note[:200] or "no note",
+        )
+    else:
+        _log.info("access request from %s: %s", email, outcome)
+    return jsonify({"ok": True})
 
 
 @bp.put("/api/access/me")

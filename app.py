@@ -57,7 +57,7 @@ app.register_blueprint(notices.bp)
 
 # Reachable without a session: the login-state probe (returns null rather than
 # a red 401 on first load) and the access-request endpoints the login page uses.
-_PUBLIC_API = ("/api/auth/me", "/api/access/me")
+_PUBLIC_API = ("/api/auth/me", "/api/access/me", "/api/access/request")
 
 
 @app.before_request

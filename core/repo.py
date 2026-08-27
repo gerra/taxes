@@ -120,12 +120,66 @@ def set_access_request_note(email: str, note: str) -> None:
         conn.close()
 
 
+def _pending_count(conn) -> int:
+    return conn.execute("SELECT count(*) FROM access_requests WHERE status = 'pending'").fetchone()[
+        0
+    ]
+
+
 def count_pending_requests() -> int:
     conn = get_conn()
     try:
-        return conn.execute(
-            "SELECT count(*) FROM access_requests WHERE status = 'pending'"
-        ).fetchone()[0]
+        return _pending_count(conn)
+    finally:
+        conn.close()
+
+
+# The login page lets anyone ask for access without signing in with Google first,
+# which makes access_requests the one table a stranger can grow. Cap it: past
+# this many unanswered requests the public endpoint turns people away instead of
+# writing another row. Google-authenticated sign-in attempts are never capped.
+MAX_PENDING_REQUESTS = 100
+
+
+def request_access(email: str, name: str, note: str) -> str:
+    """A visitor asked for access from the login page (no Google sign-in).
+
+    Returns ``created``, ``updated`` (they had asked before; the note is
+    refreshed), ``known`` (already allowed, or already declined — nothing to do)
+    or ``full`` (too many unanswered requests already). The caller answers
+    ``known`` exactly like a success, so this can't be used to probe who is on
+    the allowed list.
+    """
+    email = email.lower()
+    if is_email_allowed(email):
+        return "known"
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT status FROM access_requests WHERE email = ?", (email,)
+        ).fetchone()
+        if row is not None:
+            if row["status"] == "declined":
+                return "known"  # only the admin can flip a decline
+            conn.execute(
+                """UPDATE access_requests
+                   SET name = CASE WHEN ? != '' THEN ? ELSE name END,
+                       note = CASE WHEN ? != '' THEN ? ELSE note END,
+                       last_seen = datetime('now')
+                   WHERE email = ?""",
+                (name, name, note, note, email),
+            )
+            conn.commit()
+            return "updated"
+        if _pending_count(conn) >= MAX_PENDING_REQUESTS:
+            return "full"
+        # attempts stays 0: they asked from the login page, never tried to sign in.
+        conn.execute(
+            "INSERT INTO access_requests (email, name, note, attempts) VALUES (?, ?, ?, 0)",
+            (email, name, note),
+        )
+        conn.commit()
+        return "created"
     finally:
         conn.close()
 

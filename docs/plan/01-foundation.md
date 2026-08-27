@@ -15,6 +15,13 @@ unit" improvement), so implementation is mostly transplanting known-good pattern
   `allowed_emails`. A rejected sign-in is recorded in `access_requests` (pending) and
   leaves a 24h `tx_access` cookie so the login page can show the request status and
   take a note for the admin (`GET/PUT /api/access/me`, unauthenticated).
+- A visitor can also ask to be added **before** signing in, straight from the login
+  page (`POST /api/access/request`, unauthenticated: email + optional name/note).
+  Because anyone can call it, the pending list is capped at
+  `repo.MAX_PENDING_REQUESTS` (100) — past that the endpoint refuses instead of
+  writing rows; Google-authenticated sign-in attempts are never capped. The reply
+  is identical whether the email is new, already waiting, allowed or declined, so
+  it can't be used to probe the allowed list.
 - Admin panel (`/api/admin/access` + `approve`/`decline`/`forget`), visible only to
   `ADMIN_EMAIL` as the **Admin** tab: pending requests → approve/decline, allowed list
   → revoke (takes effect on the next request, not at cookie expiry), pre-approve by

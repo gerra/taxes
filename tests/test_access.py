@@ -63,6 +63,85 @@ def test_access_me_and_note(client, monkeypatch):
     assert client.get("/api/access/me").get_json()["note"] == "It's me, from the pub"
 
 
+# ── Asking for access without signing in with Google ───────────────────────────
+
+
+def test_public_access_request(auth_client):
+    stranger = auth_client.application.test_client()
+    resp = stranger.post(
+        "/api/access/request",
+        json={"email": " Stranger@Example.com ", "name": "Stra Nger", "note": "  from the pub  "},
+    )
+    assert resp.status_code == 200 and resp.get_json() == {"ok": True}
+
+    req = repo.get_access_request("stranger@example.com")
+    assert req["status"] == "pending" and req["name"] == "Stra Nger"
+    assert req["note"] == "from the pub" and req["attempts"] == 0  # never tried to sign in
+
+    # Asking again refreshes the note rather than adding a row.
+    stranger.post("/api/access/request", json={"email": "stranger@example.com", "note": "still me"})
+    assert repo.get_access_request("stranger@example.com")["note"] == "still me"
+
+    pending = auth_client.get("/api/admin/access").get_json()["pending"]
+    assert [r["email"] for r in pending].count("stranger@example.com") == 1
+
+    # No cookie is set, so this can't stand in for a session.
+    assert _cookie(stranger, auth.COOKIE_NAME) is None
+    assert _cookie(stranger, auth.ACCESS_COOKIE_NAME) is None
+    assert stranger.get("/api/accounts").status_code == 401
+
+
+def test_public_access_request_rejects_junk(client):
+    for email in ("", "nope", "no spaces@example.com", "a@b", "x@example.com\nBcc: y@z.com"):
+        resp = client.post("/api/access/request", json={"email": email})
+        assert resp.status_code == 400, email
+    assert client.post("/api/access/request", data="not json").status_code == 400
+
+
+def test_public_access_request_never_leaks_the_allowed_list(client):
+    """Allowed and declined emails get the same reply as a fresh request, and
+    neither is silently flipped back to pending."""
+    repo.approve_email("friend@example.com")
+    resp = client.post("/api/access/request", json={"email": "friend@example.com", "note": "hi"})
+    assert resp.status_code == 200 and resp.get_json() == {"ok": True}
+    assert repo.get_access_request("friend@example.com")["status"] == "approved"
+
+    repo.decline_email("stranger@example.com")
+    resp = client.post("/api/access/request", json={"email": "stranger@example.com", "note": "hi"})
+    assert resp.status_code == 200 and resp.get_json() == {"ok": True}
+    req = repo.get_access_request("stranger@example.com")
+    assert req["status"] == "declined" and req["note"] == ""
+
+
+def test_public_access_request_capped(client, monkeypatch):
+    """A stranger can't grow the pending list without bound."""
+    monkeypatch.setattr(repo, "MAX_PENDING_REQUESTS", 2)
+    ask = lambda email, **body: client.post(  # noqa: E731
+        "/api/access/request", json={"email": email, **body}
+    )
+    try:
+        assert ask("spam0@example.com").status_code == 200
+        assert ask("spam1@example.com").status_code == 200
+
+        resp = ask("spam2@example.com")
+        assert resp.status_code == 429 and "too many" in resp.get_json()["error"]
+        assert repo.get_access_request("spam2@example.com") is None
+
+        # Someone already on the list can still update their request…
+        assert ask("spam0@example.com", note="me again").status_code == 200
+        # …and a Google sign-in is never turned away by the cap.
+        _google_signin(client, monkeypatch, "stranger@example.com")
+        assert repo.get_access_request("stranger@example.com")["status"] == "pending"
+
+        # Answering one frees a slot.
+        repo.forget_email("spam0@example.com")
+        repo.forget_email("stranger@example.com")
+        assert ask("spam2@example.com").status_code == 200
+    finally:
+        for i in range(3):
+            repo.forget_email(f"spam{i}@example.com")
+
+
 def test_access_token_is_not_a_session(client):
     client.set_cookie(auth.COOKIE_NAME, auth.make_access_token("stranger@example.com"))
     assert client.get("/api/accounts").status_code == 401

@@ -41,6 +41,8 @@ export interface AccessLists {
   pending: AccessRequest[]
   allowed: AllowedEmail[]
   declined: AccessRequest[]
+  // Past this many pending requests the login page stops accepting new ones.
+  pending_limit?: number
 }
 
 export type AccountType =

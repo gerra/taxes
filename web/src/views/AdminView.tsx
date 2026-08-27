@@ -91,6 +91,8 @@ export default function AdminView({ onPendingCount }: Props) {
     return <p className="muted">{error ?? 'Loading…'}</p>
   }
 
+  const atLimit = !!data.pending_limit && data.pending.length >= data.pending_limit
+
   return (
     <div className="admin">
       <div className="page-head">
@@ -104,10 +106,16 @@ export default function AdminView({ onPendingCount }: Props) {
           <h3>Pending requests</h3>
           {data.pending.length > 0 && <span className="badge warn">{data.pending.length}</span>}
         </div>
+        {atLimit && (
+          <p className="error-text small">
+            {data.pending.length} of {data.pending_limit} — the login page is turning new requests
+            away until you clear some of these.
+          </p>
+        )}
         {data.pending.length === 0 ? (
           <p className="muted small">
-            Nobody is waiting. When someone signs in with Google and isn’t allowed, they show up
-            here.
+            Nobody is waiting. People show up here when they ask for access from the login page, or
+            when they sign in with Google and aren’t allowed.
           </p>
         ) : (
           <table className="sa-table admin-table">
@@ -115,7 +123,7 @@ export default function AdminView({ onPendingCount }: Props) {
               <tr>
                 <th>Who</th>
                 <th>Message</th>
-                <th>Tried</th>
+                <th>When</th>
                 <th />
               </tr>
             </thead>
@@ -128,7 +136,13 @@ export default function AdminView({ onPendingCount }: Props) {
                   </td>
                   <td className="admin-note">{r.note || <span className="muted">—</span>}</td>
                   <td className="small">
-                    {r.attempts}× · last {fmtWhen(r.last_seen)}
+                    {r.attempts === 0 ? (
+                      <>asked {fmtWhen(r.last_seen)}</>
+                    ) : (
+                      <>
+                        {r.attempts}× · last {fmtWhen(r.last_seen)}
+                      </>
+                    )}
                     {r.attempts > 1 && <div className="muted">first {fmtWhen(r.first_seen)}</div>}
                   </td>
                   <td className="admin-actions">

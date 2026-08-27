@@ -47,6 +47,8 @@ def list_access():
                 "admin": True,
             },
         )
+    # The login page refuses new requests past this many pending ones.
+    data["pending_limit"] = repo.MAX_PENDING_REQUESTS
     return jsonify(data)
 
 
