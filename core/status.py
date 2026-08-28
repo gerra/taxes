@@ -121,7 +121,9 @@ def _income_step(inputs: dict) -> dict:
     }
 
 
-def _report_step(user_id: int, tax_year: int, checklist: dict, current_hash: str | None) -> dict:
+def _report_step(
+    user_id: int, tax_year: int, checklist: dict, current_hashes: set[str] | None
+) -> dict:
     run = repo.latest_ok_run(user_id, tax_year)
     if not run:
         return {
@@ -132,9 +134,11 @@ def _report_step(user_id: int, tax_year: int, checklist: dict, current_hash: str
             "stale": False,
             "run_at": None,
         }
-    # No hash from the caller means staleness is simply unknown — better to say
-    # nothing than to call a good report out of date, or a stale one current.
-    stale = current_hash is not None and run["input_hash"] != current_hash
+    # No hashes from the caller means staleness is simply unknown — better to
+    # say nothing than to call a good report out of date, or a stale one
+    # current. More than one is expected: the engine hashes a waived
+    # cash-balance run differently, and that is a run option, not an input.
+    stale = bool(current_hashes) and run["input_hash"] not in current_hashes
     run_at = run["finished_at"] or run["created_at"]
     if stale:
         return {
@@ -203,14 +207,15 @@ def build(
     user_id: int,
     tax_year: int,
     today: date | None = None,
-    current_hash: str | None = None,
+    current_hashes: set[str] | None = None,
 ) -> dict | None:
     """Every step's state for one tax year, plus the one thing to do next.
 
-    `current_hash` is the input hash the engine would compute for the documents
-    as they stand now; passing it is what lets the report step notice that it
-    was calculated from a document set that has since changed. It is passed in
-    rather than computed here so that this module stays clear of the engine."""
+    `current_hashes` is every hash the engine would accept for the documents as
+    they stand now (see `runner.current_input_hashes`); passing them is what
+    lets the report step notice it was calculated from a document set that has
+    since changed. They are passed in rather than computed here so that this
+    module stays clear of the engine."""
     year = tax_years.get_year(tax_year)
     if not year:
         return None
@@ -224,7 +229,7 @@ def build(
     steps = {
         "documents": _documents_step(checklist),
         "income": _income_step(inputs),
-        "report": _report_step(user_id, tax_year, checklist, current_hash),
+        "report": _report_step(user_id, tax_year, checklist, current_hashes),
         "plan": _plan_step(tips, inputs, in_progress),
     }
     for key, step in steps.items():

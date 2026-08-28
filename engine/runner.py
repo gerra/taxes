@@ -327,6 +327,20 @@ def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) 
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
+def current_input_hashes(user_id: int, tax_year: int) -> set[str]:
+    """Every hash the documents as they stand now could legitimately produce.
+
+    Staleness — "was this report computed from the documents I have now?" — is a
+    different question from the cache key, which also folds in `balance_check`
+    because a waived run is a different calculation and must never be served
+    from a checked run's cache. `balance_check` is a run option, not an input,
+    so a report matches if it matches under either mode. Comparing against the
+    checked hash alone marks every waived run out of date the moment it
+    finishes, which for a document set that cannot pass the check (a Freetrade
+    export missing its old top-ups) is every run there will ever be."""
+    return {compute_input_hash(user_id, tax_year, check) for check in (True, False)}
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 
