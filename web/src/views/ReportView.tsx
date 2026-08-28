@@ -3,6 +3,7 @@ import { api, ApiError } from '../api'
 import { useConfirm } from '../components/ConfirmDialog'
 import Notices from '../components/Notices'
 import Section from '../components/Section'
+import StepHeader from '../components/StepHeader'
 import type {
   BalanceLedgerRow,
   CalcRun,
@@ -11,7 +12,9 @@ import type {
   ErrorTransaction,
   RateChangeSplit,
   Report,
+  StepKey,
   TaxDue,
+  YearStatus,
 } from '../types'
 import { currentTaxYear, gbp, num, pct, shortDate, taxYearLabel } from '../utils/format'
 
@@ -28,7 +31,17 @@ const RULE_EXPLAIN: Record<string, string> = {
 const EXEMPT_EXPLAIN =
   'Exempt: gilts and UK Treasury bills are outside capital gains tax (TCGA 1992 s115). The matching above is shown for the record; the gain or loss is neither chargeable nor allowable and is left out of every SA108 figure.'
 
-export default function ReportView({ year }: { year: number }) {
+export default function ReportView({
+  year,
+  status,
+  onChange,
+  onGoTo,
+}: {
+  year: number
+  status: YearStatus | null
+  onChange: () => void
+  onGoTo: (key: StepKey) => void
+}) {
   const [report, setReport] = useState<Report | null>(null)
   const [running, setRunning] = useState(false)
   const [calcError, setCalcError] = useState<CalcRun['error'] | null>(null)
@@ -56,8 +69,10 @@ export default function ReportView({ year }: { year: number }) {
         force,
         balance_check: balanceCheck,
       })
-      if (result.status === 'ok') load()
-      else setCalcError(result.error ?? { type: 'unknown', message: 'Calculation failed' })
+      if (result.status === 'ok') {
+        load()
+        onChange()
+      } else setCalcError(result.error ?? { type: 'unknown', message: 'Calculation failed' })
     } catch (e) {
       setCalcError({ type: 'request', message: String(e) })
     } finally {
@@ -65,13 +80,25 @@ export default function ReportView({ year }: { year: number }) {
     }
   }
 
+  const step = status?.steps.find((s) => s.key === 'report')
+  // Recalculating matters only when the answer would change; saying so is the
+  // difference between a button you have to remember to press and one that
+  // tells you when it is needed.
+  const needsRun = !report || step?.stale === true
+
   return (
     <div>
-      <div className="page-head">
-        <h2>
-          Report {year}/{String((year + 1) % 100).padStart(2, '0')}
-        </h2>
-        <button className="btn primary" disabled={running} onClick={() => run(true)}>
+      <StepHeader
+        step="report"
+        status={status}
+        title={`Report ${taxYearLabel(year)}`}
+        onGoTo={onGoTo}
+      >
+        <button
+          className={needsRun ? 'btn primary' : 'btn'}
+          disabled={running}
+          onClick={() => run(true)}
+        >
           {running ? 'Calculating…' : report ? 'Recalculate' : 'Calculate'}
         </button>
         {report?.has_pdf && (
@@ -79,7 +106,21 @@ export default function ReportView({ year }: { year: number }) {
             Download computation PDF
           </a>
         )}
-      </div>
+      </StepHeader>
+
+      {step?.stale && !running && (
+        <div className="banner warn">
+          <b>These figures are out of date.</b> Your documents or settings changed since this
+          calculation ran, so what you see below is not what your current documents produce.
+          Recalculate before copying anything onto a return.
+        </div>
+      )}
+
+      {report && !step?.stale && step?.run_at && (
+        <p className="muted small run-stamp">
+          Calculated {shortDate(step.run_at.slice(0, 10))} from every document currently uploaded.
+        </p>
+      )}
 
       {running && (
         <p className="muted">
@@ -97,10 +138,19 @@ export default function ReportView({ year }: { year: number }) {
       )}
 
       {noRun && !running && !calcError && (
-        <p className="muted">No calculation yet for this year — hit Calculate.</p>
+        <div className="step-next">
+          <div>
+            <b>Nothing calculated yet for {taxYearLabel(year)}.</b> This replays every transaction
+            in your uploaded documents against HMRC&rsquo;s matching rules — same-day, 30-day, and
+            the Section 104 pool — and produces the figures the return asks for.
+          </div>
+          <button className="btn primary" disabled={running} onClick={() => run(true)}>
+            Calculate now
+          </button>
+        </div>
       )}
 
-      {report && <ReportBody report={report} onChange={load} />}
+      {report && <ReportBody report={report} onChange={load} onGoTo={onGoTo} />}
     </div>
   )
 }
@@ -300,26 +350,40 @@ function ErrorTransactionTable({ tx }: { tx: ErrorTransaction }) {
   )
 }
 
-function ReportBody({ report, onChange }: { report: Report; onChange: () => void }) {
+function ReportBody({
+  report,
+  onChange,
+  onGoTo,
+}: {
+  report: Report
+  onChange: () => void
+  onGoTo: (key: StepKey) => void
+}) {
   const { view, bundle } = report
   return (
     <div>
       {view.tax_year === currentTaxYear() && (
         <div className="banner info">
           {taxYearLabel(view.tax_year)} is still running — this is a snapshot of what has happened
-          so far, not a return. The Planner tab turns it into the moves still open to you before 5
-          April.
+          so far, not a return.{' '}
+          <button className="link" onClick={() => onGoTo('plan')}>
+            The Plan step
+          </button>{' '}
+          turns it into the moves still open to you before 5 April.
         </div>
       )}
       {report.provisional && (
         <div className="banner warn">
-          Documents are incomplete ({report.coverage_overall}) — these figures are provisional. Fill
-          the gaps in the Documents tab.
+          Documents are incomplete ({report.coverage_overall}) — these figures are provisional.{' '}
+          <button className="link" onClick={() => onGoTo('documents')}>
+            Fill the gaps
+          </button>{' '}
+          and recalculate before filing off them.
         </div>
       )}
       <Notices notices={view.notices ?? []} taxYear={view.tax_year} onChange={onChange} />
 
-      <TaxDueCard taxDue={view.tax_due} deadline={view.filing_deadline} />
+      <TaxDueCard taxDue={view.tax_due} deadline={view.filing_deadline} onGoTo={onGoTo} />
 
       <div className="cards-row">
         <StatCard
@@ -679,7 +743,7 @@ function PaymentsOnAccountNote({ taxDue }: { taxDue: TaxDue }) {
           {' '}
           <b>
             No P60 entered, so this assumes PAYE collected the right tax on your salary — enter it
-            to have both tests computed rather than assumed.
+            on the Income step to have both tests computed rather than assumed.
           </b>
         </>
       )}
@@ -746,10 +810,12 @@ function SelfAssessmentCard({
   taxDue,
   deadline,
   cgtDetail,
+  onGoTo,
 }: {
   taxDue: TaxDue
   deadline: string
   cgtDetail: string
+  onGoTo: (key: StepKey) => void
 }) {
   const sa = taxDue.self_assessment
   if (!sa) return null
@@ -816,9 +882,12 @@ function SelfAssessmentCard({
       )}
       {!sa.reconciled && (
         <div className="total-note warn-note">
-          <b>Excludes any PAYE under- or over-collection on salary.</b> Enter your P60 figures in
-          the Planner tab to see the full bill. For an additional-rate salary the PAYE shortfall is
-          routinely larger than the whole investment-income figure above.
+          <b>Excludes any PAYE under- or over-collection on salary.</b> For an additional-rate
+          salary the shortfall is routinely larger than the whole investment-income figure above.{' '}
+          <button className="link" onClick={() => onGoTo('income')}>
+            Enter your P60
+          </button>{' '}
+          to see the full bill.
         </div>
       )}
       {sa.tax_code_explanation && (
@@ -836,7 +905,15 @@ function SelfAssessmentCard({
 }
 
 /** The headline bill, with the investment-income detail inset behind it. */
-function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline: string }) {
+function TaxDueCard({
+  taxDue,
+  deadline,
+  onGoTo,
+}: {
+  taxDue: TaxDue | undefined
+  deadline: string
+  onGoTo: (key: StepKey) => void
+}) {
   if (!taxDue?.available) {
     return (
       <div className="total-card">
@@ -845,9 +922,13 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           <div className="stat-value">—</div>
         </div>
         <div className="total-note">
-          Enter your income in the Planner tab — your P60 pay and tax deducted, and any pension
-          contributions. Tax on these figures depends on your marginal rate, and what PAYE already
-          collected on your salary depends on your P60, so neither can be estimated without them.
+          Tax on these figures depends on the rate band your salary puts you in, and what PAYE
+          already collected depends on your P60 — neither can be estimated without them.
+          <div className="card-actions">
+            <button className="btn primary" onClick={() => onGoTo('income')}>
+              Enter your income
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -865,7 +946,9 @@ function TaxDueCard({ taxDue, deadline }: { taxDue: TaxDue | undefined; deadline
           .filter(Boolean)
           .join(' + ')
       : 'within exempt amount'
-  return <SelfAssessmentCard taxDue={taxDue} deadline={deadline} cgtDetail={cgtDetail} />
+  return (
+    <SelfAssessmentCard taxDue={taxDue} deadline={deadline} cgtDetail={cgtDetail} onGoTo={onGoTo} />
+  )
 }
 
 function StatCard({

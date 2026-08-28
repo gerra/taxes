@@ -6,11 +6,9 @@ means either the return was filed on figures this tool would not have produced
 Both are worth knowing, and neither is visible from a single year's page.
 """
 
-import json
+from flask import Blueprint, g, jsonify, request
 
-from flask import Blueprint, g, jsonify
-
-from core import repo, report_view, self_assessment, tax_years
+from core import planner_ctx, repo, self_assessment, tax_years
 
 bp = Blueprint("history", __name__, url_prefix="/api/history")
 
@@ -29,9 +27,7 @@ def _year_row(user_id: int, tax_year: int) -> dict | None:
     if not year:
         return None
     inputs = repo.get_planner_inputs(user_id, tax_year) or {}
-    run = repo.latest_ok_run(user_id, tax_year)
-    bundle = json.loads(run["bundle"]) if run else None
-    invest = report_view.summary_for_planner(bundle) if bundle else {}
+    invest, bundle = planner_ctx.invest_for(user_id, tax_year, inputs)
     if not inputs and not bundle:
         return None
 
@@ -77,3 +73,23 @@ def history():
             "mismatched": [r["tax_year"] for r in compared if not r["matches"]],
         }
     )
+
+
+@bp.put("/<int:tax_year>/actual")
+def set_actual(tax_year: int):
+    """What HMRC actually charged for a year, entered from the row it explains.
+
+    It belongs here rather than on the income form because it is not an input to
+    anything: it is the answer this tool's estimate gets marked against, and it
+    is typed in months later, from the HMRC statement."""
+    body = request.get_json(force=True)
+    value = (body or {}).get("actual_tax_paid")
+    if value in (None, ""):
+        repo.patch_planner_inputs(g.user_id, tax_year, {ACTUAL_KEY: None})
+        return jsonify({"actual": None})
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return jsonify({"error": "actual_tax_paid must be a number"}), 400
+    repo.patch_planner_inputs(g.user_id, tax_year, {ACTUAL_KEY: amount})
+    return jsonify({"actual": amount})
