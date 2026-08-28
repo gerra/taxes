@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { useConfirm } from '../components/ConfirmDialog'
+import StepHeader from '../components/StepHeader'
 import type {
   Account,
   AccountCoverage,
@@ -9,6 +10,8 @@ import type {
   DateRange,
   Doc,
   MappingNeeded,
+  StepKey,
+  YearStatus,
 } from '../types'
 import { shortDate } from '../utils/format'
 
@@ -30,7 +33,17 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   missing: { label: 'No documents', cls: 'bad' },
 }
 
-export default function DocumentsView({ year }: { year: number }) {
+export default function DocumentsView({
+  year,
+  status,
+  onChange,
+  onGoTo,
+}: {
+  year: number
+  status: YearStatus | null
+  onChange: () => void
+  onGoTo: (key: StepKey) => void
+}) {
   const [checklist, setChecklist] = useState<Checklist | null>(null)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState<AccountType | null>(null)
@@ -40,7 +53,10 @@ export default function DocumentsView({ year }: { year: number }) {
       .get<Checklist>(`/api/checklist/${year}`)
       .then(setChecklist)
       .catch((e) => setError(String(e)))
-  }, [year])
+    // Uploading or deleting a document moves the coverage the rail reports, and
+    // makes any existing calculation stale.
+    onChange()
+  }, [year, onChange])
 
   useEffect(reload, [reload])
 
@@ -49,16 +65,21 @@ export default function DocumentsView({ year }: { year: number }) {
 
   return (
     <div>
-      <div className="page-head">
-        <h2>Documents for {checklist.label}</h2>
+      <StepHeader
+        step="documents"
+        status={status}
+        title={`Documents ${checklist.label}`}
+        onGoTo={onGoTo}
+      >
         <span className="muted">
           covers 6 Apr {checklist.tax_year} – 5 Apr {checklist.tax_year + 1} · file online by{' '}
           {shortDate(checklist.filing_deadline)}
         </span>
-      </div>
+      </StepHeader>
       <p className="muted">
-        Capital gains need your <b>full history</b> (the Section 104 pool replays every purchase),
-        not just this tax year — upload export chunks until each account shows Complete.
+        Upload export chunks until each account below shows <b>Complete</b>. Brokers cap how far
+        back one export reaches — Schwab about four years, Freetrade twelve months — so several
+        files per account is normal, and they are stitched together here.
       </p>
       {checklist.needs.map((n, i) => (
         <div key={i} className="banner warn needs-banner">
@@ -88,6 +109,33 @@ export default function DocumentsView({ year }: { year: number }) {
           + Add account
         </button>
       )}
+      <NextFromDocuments checklist={checklist} onGoTo={onGoTo} />
+    </div>
+  )
+}
+
+/** Where to go once the documents are in. Without it the step just ends, and
+ *  nothing says the calculation is a separate thing you have to ask for. */
+function NextFromDocuments({
+  checklist,
+  onGoTo,
+}: {
+  checklist: Checklist
+  onGoTo: (key: StepKey) => void
+}) {
+  if (checklist.overall === 'no_accounts') return null
+  const ready = checklist.overall === 'ok'
+  return (
+    <div className={`step-next ${ready ? 'ready' : ''}`}>
+      <div>
+        <b>{ready ? 'Documents complete.' : 'You can carry on with gaps.'}</b>{' '}
+        {ready
+          ? 'Next, run the calculation over them.'
+          : 'The report will run, but it is marked provisional and the figures may move once the gaps are filled.'}
+      </div>
+      <button className="btn primary" onClick={() => onGoTo('report')}>
+        Go to Report
+      </button>
     </div>
   )
 }

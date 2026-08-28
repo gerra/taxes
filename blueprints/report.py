@@ -5,17 +5,23 @@ import json
 
 from flask import Blueprint, g, jsonify
 
-from core import coverage, notices, repo, report_view, tax_profile, tax_years
+from core import coverage, notices, planner_ctx, repo, report_view, tax_profile, tax_years
 
 bp = Blueprint("report", __name__, url_prefix="/api/report")
 
 
-def _profile_or_none(user_id: int, tax_year: int, bundle: dict) -> dict | None:
+def _profile_or_none(user_id: int, tax_year: int) -> dict | None:
+    """The tax profile the bill is priced from, or None when no income has been
+    entered — without it there is no marginal rate to charge anything at.
+
+    Built through the planner's own context so the bill shown here is the one
+    the Income and Plan steps show, manual overrides included."""
     inputs = repo.get_planner_inputs(user_id, tax_year)
     year = tax_years.get_year(tax_year)
     if not inputs or not year:
         return None
-    return tax_profile.build_profile(inputs, year, report_view.summary_for_planner(bundle))
+    invest, _ = planner_ctx.invest_for(user_id, tax_year, inputs)
+    return tax_profile.build_profile(inputs, year, invest)
 
 
 @bp.get("/years")
@@ -30,7 +36,7 @@ def report(tax_year: int):
     if not run:
         return jsonify({"status": "no_run"}), 404
     bundle = json.loads(run["bundle"])
-    profile = _profile_or_none(g.user_id, tax_year, bundle)
+    profile = _profile_or_none(g.user_id, tax_year)
     view = report_view.build_view(bundle, tax_year, profile)
     notices.apply_resolutions(view["notices"], repo.list_resolutions(g.user_id))
     checklist = coverage.checklist(g.user_id, tax_year)

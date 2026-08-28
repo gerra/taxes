@@ -32,7 +32,7 @@ async function renderReport() {
   mockReport()
   render(
     <ConfirmProvider>
-      <ReportView year={2024} />
+      <ReportView year={2024} status={null} onChange={() => {}} onGoTo={() => {}} />
     </ConfirmProvider>,
   )
   await waitFor(() => expect(screen.getByText(/CGT rates changed on/)).toBeInTheDocument())

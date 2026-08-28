@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
+import StepRail from './components/StepRail'
 import { useAuth } from './hooks/useAuth'
-import { currentTaxYear, lastElapsedTaxYear, taxYearLabel } from './utils/format'
+import type { StepKey, YearStatus } from './types'
+import { currentTaxYear, lastElapsedTaxYear, shortDate, taxYearLabel } from './utils/format'
 import AdminView from './views/AdminView'
 import DocumentsView from './views/DocumentsView'
 import HistoryView from './views/HistoryView'
+import IncomeView from './views/IncomeView'
 import LoginView from './views/LoginView'
-import PlannerView from './views/PlannerView'
+import PlanView from './views/PlanView'
 import ReportView from './views/ReportView'
 
-const TABS = ['Documents', 'Report', 'Planner', 'History'] as const
-type Tab = (typeof TABS)[number] | 'Admin'
+type Page = StepKey | 'history' | 'admin'
 
 // The year the app opens on is the last finished one — that's the one you file.
 // The running year is offered too: it's the only one you can still change.
@@ -19,12 +21,18 @@ const IN_PROGRESS = currentTaxYear()
 
 export default function App() {
   const { user, loading, logout } = useAuth()
-  const [tab, setTab] = useState<Tab>('Documents')
+  const [page, setPage] = useState<Page>('documents')
+  // The landing step is chosen once, from the first status that arrives: the
+  // app opens where the work actually is rather than always at step one. Only
+  // once — after that the user is navigating, and moving them would be rude.
+  const landed = useRef(false)
   const [year, setYear] = useState(LATEST_FILED)
   // Only years the backend has constants for (core/tax_years.py), newest first;
   // the running year is included, marked so nobody files off it.
   const [years, setYears] = useState<number[]>([LATEST_FILED])
-  // Admin only: pending access requests, shown as a badge on the Admin tab.
+  const [status, setStatus] = useState<YearStatus | null>(null)
+  const [statusLoading, setStatusLoading] = useState(true)
+  // Admin only: pending access requests, shown as a badge on the Admin link.
   const [pending, setPending] = useState(0)
 
   useEffect(() => {
@@ -42,8 +50,31 @@ export default function App() {
       .catch(() => {})
   }, [user])
 
+  // Every step's state, reloaded whenever a step changes something. It is what
+  // the rail draws, and what tells each page whether it is the thing to do next.
+  const reloadStatus = useCallback(() => {
+    if (!user) return
+    setStatusLoading(true)
+    api
+      .get<YearStatus>(`/api/status/${year}`)
+      .then(setStatus)
+      .catch(() => setStatus(null))
+      .finally(() => setStatusLoading(false))
+  }, [user, year])
+
+  useEffect(reloadStatus, [reloadStatus])
+
+  useEffect(() => {
+    if (landed.current || !status) return
+    landed.current = true
+    // Nothing outstanding: open on the Report, which is the thing you came for.
+    setPage(status.next?.key ?? 'report')
+  }, [status])
+
   if (loading) return <div className="center-page">Loading…</div>
   if (!user) return <LoginView />
+
+  const goTo = (key: StepKey) => setPage(key)
 
   return (
     <div className="app">
@@ -52,24 +83,8 @@ export default function App() {
           <img src="/favicon.svg" alt="" className="logo-mark small" />
           <span className="wordmark">taxes</span>
         </h1>
-        <nav>
-          {TABS.map((t) => (
-            <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>
-              {t}
-            </button>
-          ))}
-          {user.is_admin && (
-            <button
-              className={tab === 'Admin' ? 'tab active' : 'tab'}
-              onClick={() => setTab('Admin')}
-              title="Manage who can sign in"
-            >
-              Admin
-              {pending > 0 && <span className="tab-count">{pending}</span>}
-            </button>
-          )}
-        </nav>
         <div className="topbar-right">
+          {status && <DeadlinePill status={status} />}
           <select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
@@ -82,19 +97,47 @@ export default function App() {
               </option>
             ))}
           </select>
+          {user.is_admin && (
+            <button
+              className={page === 'admin' ? 'link active' : 'link'}
+              onClick={() => setPage('admin')}
+              title="Manage who can sign in"
+            >
+              Admin
+              {pending > 0 && <span className="tab-count">{pending}</span>}
+            </button>
+          )}
           <button className="link" onClick={logout} title={user.email}>
             Sign out
           </button>
         </div>
       </header>
+
+      {page !== 'admin' && (
+        <StepRail
+          status={status}
+          active={page === 'history' ? 'history' : page}
+          onSelect={setPage}
+          loading={statusLoading}
+        />
+      )}
+
       <main>
-        {tab === 'Documents' && <DocumentsView year={year} />}
-        {tab === 'Report' && <ReportView year={year} />}
-        {tab === 'Planner' && <PlannerView year={year} />}
+        {page === 'documents' && (
+          <DocumentsView year={year} status={status} onChange={reloadStatus} onGoTo={goTo} />
+        )}
+        {page === 'income' && (
+          <IncomeView year={year} status={status} onChange={reloadStatus} onGoTo={goTo} />
+        )}
+        {page === 'report' && (
+          <ReportView year={year} status={status} onChange={reloadStatus} onGoTo={goTo} />
+        )}
+        {page === 'plan' && <PlanView year={year} status={status} onGoTo={goTo} />}
         {/* History spans every year, so the year picker doesn't apply to it. */}
-        {tab === 'History' && <HistoryView />}
-        {tab === 'Admin' && user.is_admin && <AdminView onPendingCount={setPending} />}
+        {page === 'history' && <HistoryView onChange={reloadStatus} />}
+        {page === 'admin' && user.is_admin && <AdminView onPendingCount={setPending} />}
       </main>
+
       <footer className="disclaimer">
         <p>
           Computed hints from your own data — not tax advice. Verify against the HMRC forms before
@@ -121,5 +164,26 @@ export default function App() {
         </p>
       </footer>
     </div>
+  )
+}
+
+/** What the clock is running towards. A finished year has a filing date; the
+ *  running one has 5 April, after which nothing in it can be changed. */
+function DeadlinePill({ status }: { status: YearStatus }) {
+  const { what, date, days } = status.deadline
+  const overdue = days < 0
+  const soon = !overdue && days <= 45
+  const verb = what === 'act' ? 'to act' : 'to file'
+  return (
+    <span
+      className={`deadline-pill${overdue ? ' overdue' : soon ? ' soon' : ''}`}
+      title={
+        what === 'act'
+          ? `${status.label} ends ${shortDate(date)}. Allowances not used by then don't carry forward.`
+          : `${status.label} must be filed online and paid by ${shortDate(date)}.`
+      }
+    >
+      {overdue ? `${Math.abs(days)} days over` : `${days} days ${verb}`}
+    </span>
   )
 }

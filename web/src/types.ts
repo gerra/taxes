@@ -656,3 +656,44 @@ export interface MappingNeeded {
   headers: string[]
   sample: string[][]
 }
+
+// ── Where the year stands (GET /api/status/:year) ─────────────────────────────
+
+/** todo = untouched, attention = done but wrong/stale/incomplete, done = settled. */
+export type StepState = 'todo' | 'attention' | 'done'
+
+export type StepKey = 'documents' | 'income' | 'report' | 'plan'
+
+export interface Step {
+  key: StepKey
+  title: string
+  state: StepState
+  /** One line of state, shown under the step name in the rail. */
+  headline: string
+  /** Why it matters — the sentence shown when this step is what to do next. */
+  detail: string
+  /** Label for the button that resolves it, or null when nothing is pending. */
+  action: string | null
+  /** Report step only: computed from documents that have since changed. */
+  stale?: boolean
+  run_at?: string | null
+}
+
+export interface YearStatus {
+  tax_year: number
+  label: string
+  in_progress: boolean
+  year_end: string
+  filing_deadline: string
+  /** What the clock is running towards: acting before 5 Apr, or filing by 31 Jan. */
+  deadline: { what: 'act' | 'file'; date: string; days: number }
+  steps: Step[]
+  /** The earliest unfinished step — the one thing to do now. */
+  next: { key: StepKey; title: string; action: string | null; why: string } | null
+  bill: {
+    reconciled: boolean
+    amount: number
+    investment_only: number
+    due_date: string
+  } | null
+}

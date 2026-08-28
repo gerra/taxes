@@ -47,7 +47,7 @@ async function renderReconciled() {
   )
   render(
     <ConfirmProvider>
-      <ReportView year={2024} />
+      <ReportView year={2024} status={null} onChange={() => {}} onGoTo={() => {}} />
     </ConfirmProvider>,
   )
   await waitFor(() =>

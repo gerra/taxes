@@ -58,7 +58,7 @@ async function calculateAndFail() {
   const posts = mockFetch()
   render(
     <ConfirmProvider>
-      <ReportView year={2024} />
+      <ReportView year={2024} status={null} onChange={() => {}} onGoTo={() => {}} />
     </ConfirmProvider>,
   )
   fireEvent.click(await screen.findByRole('button', { name: 'Calculate' }))

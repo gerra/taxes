@@ -622,6 +622,35 @@ def set_planner_inputs(user_id: int, tax_year: int, data: dict) -> None:
         conn.close()
 
 
+def patch_planner_inputs(user_id: int, tax_year: int, patch: dict) -> dict:
+    """Merge a few keys into a year's saved inputs, leaving the rest alone.
+
+    The form saves the whole object; this is for the figures entered from
+    somewhere else in the app — a single field on a page that has no business
+    knowing, or resaving, the other twenty."""
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT data FROM planner_inputs WHERE user_id = ? AND tax_year = ?",
+            (user_id, tax_year),
+        ).fetchone()
+        data = json.loads(row["data"]) if row else {}
+        for key, value in patch.items():
+            if value is None:
+                data.pop(key, None)
+            else:
+                data[key] = value
+        conn.execute(
+            """INSERT INTO planner_inputs (user_id, tax_year, data) VALUES (?, ?, ?)
+               ON CONFLICT (user_id, tax_year) DO UPDATE SET data = excluded.data""",
+            (user_id, tax_year, json.dumps(data)),
+        )
+        conn.commit()
+        return data
+    finally:
+        conn.close()
+
+
 # ── Notice resolutions ─────────────────────────────────────────────────────────
 
 

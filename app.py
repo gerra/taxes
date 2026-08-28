@@ -38,6 +38,7 @@ from blueprints import (  # noqa: E402
     notices,
     planner,
     report,
+    status,
 )
 from blueprints import auth as auth_bp  # noqa: E402
 from core import auth, db, repo  # noqa: E402
@@ -61,6 +62,7 @@ app.register_blueprint(report.bp)
 app.register_blueprint(planner.bp)
 app.register_blueprint(notices.bp)
 app.register_blueprint(history.bp)
+app.register_blueprint(status.bp)
 
 # ── Auth middleware ────────────────────────────────────────────────────────────
 

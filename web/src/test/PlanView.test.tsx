@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { PlannerData, Tip } from '../types'
 import { emptySelfAssessment } from './fixtures/self-assessment'
-import PlannerView from '../views/PlannerView'
+import PlanView from '../views/PlanView'
 
 const tip = (over: Partial<Tip>): Tip => ({
   id: 'x',
@@ -136,7 +136,7 @@ function mockFetch() {
 
 test('a benefit that is gone reads red, one about to go reads orange', async () => {
   mockFetch()
-  render(<PlannerView year={2025} />)
+  render(<PlanView year={2025} status={null} onGoTo={() => {}} />)
 
   const lost = (await screen.findByText(/expired unused/)).closest('.tip-card')!
   expect(lost.className).toContain('tip-lost')
@@ -156,7 +156,7 @@ test('a benefit that is gone reads red, one about to go reads orange', async () 
 
 test('the how-to steps stay folded away until the card is opened', async () => {
   mockFetch()
-  render(<PlannerView year={2025} />)
+  render(<PlanView year={2025} status={null} onGoTo={() => {}} />)
 
   const card = (await screen.findByText('Just so you know')).closest('.tip-card')!
   expect(card.querySelector('.tip-steps')).toBeNull()
@@ -171,7 +171,7 @@ test('the how-to steps stay folded away until the card is opened', async () => {
 
 test('the year parameters are on the page, with the gov.uk page they came from', async () => {
   mockFetch()
-  render(<PlannerView year={2025} />)
+  render(<PlanView year={2025} status={null} onGoTo={() => {}} />)
 
   // Folded away by default: the figures are for checking, not for reading every
   // time. Opening the section shows them with their source.

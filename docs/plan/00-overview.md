@@ -45,6 +45,38 @@ nginx :443 taxes.gerra.sh ──► gunicorn 127.0.0.1:5002 ──► Flask
    (files, db)     calc_runs, planner_inputs
 ```
 
+`core/planner_ctx.py` assembles the picture a year is judged from — saved inputs, the
+year's constants, the investment summary from its latest run, and the earlier years
+carry-forward reaches back to. Report, Planner, History and Status all build on it, so
+the bill they quote is one number computed once rather than four near-copies.
+
+## The UI is the pipeline
+
+The four modules are not four places to visit — they are four steps in one job, and
+the SPA says so. `GET /api/status/<year>` (`core/status.py`) reports each step as
+`todo` / `attention` / `done` plus the first unfinished one, and the app draws that as
+its primary navigation:
+
+```
+   ① Documents ─── ② Income ─── ③ Report ─── ④ Plan          History
+     coverage       P60, pension,  figures +    tips with       estimate vs.
+     per account    other income   SA boxes     £ wins          what HMRC charged
+```
+
+Rules the layout enforces, each of which was a real confusion in the tab version:
+
+- **Inputs are separated from what they produce.** Everything typed by hand lives in
+  Documents (files) or Income (figures); Report and Plan only ever show results. The
+  old Planner was both at once, with the tips buried under twenty input fields.
+- **The bill has exactly one home** — the Report. Plan links to it, History compares
+  against it; neither re-renders it, because the same number shown three ways reads as
+  three answers.
+- **A figure is entered where it is used.** "What HMRC actually charged" feeds no
+  calculation and belongs in the History row it explains, not on the income form.
+- **Staleness is visible, not remembered.** The report step compares the latest run's
+  `input_hash` against what the engine would compute now, so "your documents changed
+  since this ran" is stated rather than left to the user to notice.
+
 Tax years: the picker offers every year `core/tax_years.py` has constants for, up to
 and including the one now running (labelled "in progress"). The app opens on the last
 *finished* year — that's the one being filed — while the running year is where the
