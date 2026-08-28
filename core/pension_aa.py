@@ -161,6 +161,16 @@ def compute(selected_year: int, years: list[PensionYear]) -> dict:
     expired = available.get(selected_year - 3, ZERO)
 
     warnings = []
+    # The selected year's own allowance is the biggest number in the tip. Without
+    # an income figure the taper can't be tested, so it is the standard allowance
+    # by assumption — say so, or a tapered year reads as having ~50k more room
+    # than it has.
+    if not sel["verified"]:
+        warnings.append(
+            f"{tax_years.label(selected_year)}: no income entered in its Planner, so the "
+            f"£{sel['standard']:,.2f} allowance is assumed untapered — the headroom is an "
+            "upper bound, and a taper would cut it"
+        )
     for ty in (selected_year - 3, selected_year - 2, selected_year - 1):
         label = tax_years.label(ty)
         r = results.get(ty)

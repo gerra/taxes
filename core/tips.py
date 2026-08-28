@@ -107,6 +107,15 @@ def _pension_input_from(inputs: dict) -> Decimal | None:
     return employee + employer + _ras_gross(inputs)
 
 
+def _income_entered(inputs: dict) -> bool:
+    """True when a year's Planner carries its own income figure. Without one the
+    taper can't be tested and there is no relevant-earnings figure to cap a
+    personal contribution against — so the year's allowance is an assumption,
+    not a fact. Investment income alone doesn't count: it arrives from the
+    report whether or not anything was entered."""
+    return inputs.get("employment_income") is not None
+
+
 def _pension_years(ctx) -> list[PensionYear]:
     """Selected year from its inputs + profile; prior years from this year's
     "Pension total, YYYY/YY" boxes (explicit) or, failing that, the prior year's
@@ -120,7 +129,7 @@ def _pension_years(ctx) -> list[PensionYear]:
         PensionYear(
             sel,
             own_input,
-            money(ctx["profile"]["income"]["total"]),
+            money(ctx["profile"]["income"]["total"]) if _income_entered(inputs) else None,
             sacrifice=money(inputs.get("pension_employee") or 0),
             ras_gross=_ras_gross(inputs),
             member=own_input > 0,
@@ -135,7 +144,7 @@ def _pension_years(ctx) -> list[PensionYear]:
         if total is None:
             continue
         net = None
-        if own.get("employment_income") is not None:
+        if _income_entered(own):
             net = money(tax_profile.total_income(own, prior.get("invest") or {}))
         years.append(
             PensionYear(
@@ -369,14 +378,25 @@ def pension_headroom(ctx):
         return None
     # Personal contributions are capped at relevant UK earnings (or £3,600 gross
     # for anyone); the rest of the headroom can only be used by an employer.
+    # With no income entered there is no earnings figure to cap against — the
+    # £3,600 floor is an artefact of the missing data, not a real ceiling, and
+    # presenting it as one turned six figures of headroom into "pay £3,600".
+    known_income = _income_entered(inputs)
     earnings = max(money(inputs.get("employment_income") or 0), money(3600))
-    suggested = min(headroom, earnings)
+    suggested = min(headroom, earnings) if known_income else headroom
     net = money(suggested * Decimal("0.8"))
     what = (
         f"Pay up to {_gbp(suggested)} gross ({_gbp(net)} net — HMRC adds 25%) before 5 April "
         f"{sel_year + 1}: an AVC into your workplace scheme, or a relief-at-source SIPP."
     )
-    if suggested < headroom:
+    if not known_income:
+        what += (
+            f" Both figures are provisional: with no {lab} income entered above, the taper can't "
+            f"be tested (so the full {_gbp(s['standard'])} allowance is assumed) and there is no "
+            "relevant-earnings figure to cap a personal contribution against. Enter this year's "
+            "pay and pension figures for the real number."
+        )
+    elif suggested < headroom:
         what += (
             f" That's capped at your relevant UK earnings ({_gbp(earnings)} employment income); "
             f"the rest of the {_gbp(headroom)} headroom can only be used by employer contributions."
@@ -441,12 +461,27 @@ def pension_headroom(ctx):
         f"Then enter what you actually paid in the {lab} Planner — next year's carry-forward is "
         "computed from it.",
     ]
+    if not known_income:
+        # Everything above rests on an allowance nobody has checked, so this step
+        # comes before any of it.
+        steps.insert(
+            0,
+            f"First, enter your {lab} pay and pension figures in the Planner above. Until then "
+            "the taper can't be tested and neither the headroom nor the amount you can pay "
+            "personally is a real figure — for an in-progress year, the latest payslip's "
+            "year-to-date columns plus an estimate to 5 April is enough.",
+        )
     return _tip(
         "pension_headroom",
-        f"{_gbp(headroom)} of pension annual allowance unused",
+        (
+            f"Up to {_gbp(headroom)} of pension annual allowance unused"
+            if not known_income
+            else f"{_gbp(headroom)} of pension annual allowance unused"
+        ),
         what,
         why,
-        float(suggested) * rate,
+        float(suggested) * rate if known_income else None,
+        confidence="low" if not known_income else "medium",
         deadline=tax_years.tax_year_end(sel_year).isoformat(),
         detail=detail,
         warnings=warnings,

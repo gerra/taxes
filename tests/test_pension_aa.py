@@ -365,3 +365,90 @@ def test_tip_prefers_prior_year_planner_when_no_explicit_total():
 def test_money_helper_keeps_pence():
     assert pension_aa.money(7067.47) == D("7067.47")
     assert pension_aa.money("0.1") + pension_aa.money(0.2) == D("0.30")
+
+
+# ── A year with no income entered ──────────────────────────────────────────────
+#
+# The in-progress year is the only one still worth acting on and the last one to
+# have its pay figures typed in, so this is its normal state for most of the
+# year. It used to assume the standard allowance in silence and cap the
+# suggestion at the £3,600 relevant-earnings floor, turning six figures of
+# headroom into "pay £3,600, save ~£720".
+
+NO_INCOME_2026 = {
+    "pension_prior_1": 17668.74,  # 2025/26
+    "pension_prior_2": 16987.32,  # 2024/25
+    "pension_prior_3": 9203.52,  # 2023/24
+}
+PRIOR_TO_2026 = {
+    2025: {"inputs": {"employment_income": 376182.79}, "invest": {}},
+    2024: {"inputs": {"employment_income": 332826.00}, "invest": {}},
+    2023: {"inputs": {"employment_income": 220031.00}, "invest": {}},
+    # Out of the carry-forward window for 2026/27, but still needed: it absorbs
+    # 2024/25's and 2025/26's excesses, which would otherwise eat 2023/24.
+    2022: {
+        "inputs": {
+            "employment_income": 127720.34,
+            "pension_employee": 2503.31,
+            "pension_employer": 5006.62,
+        },
+        "invest": {},
+    },
+}
+
+
+def test_selected_year_without_income_is_unverified_and_warned():
+    res = compute(2026, [PensionYear(2026, D("0"), None)])
+    assert not res["selected"]["verified"]
+    assert res["selected"]["allowance"] == D("60000.00")
+    assert any(
+        w.startswith("2026/27: no income entered") and "upper bound" in w for w in res["warnings"]
+    )
+
+
+def test_selected_year_with_income_is_not_warned_as_unverified():
+    res = compute(2026, [PensionYear(2026, D("0"), D("380000.00"))])
+    assert res["selected"]["verified"]
+    assert not any("2026/27: no income entered" in w for w in res["warnings"])
+
+
+def test_investment_income_alone_does_not_verify_the_selected_year():
+    # £707 of dividends arrives from the report whether or not anything was
+    # entered; treating it as the year's income made the taper test pass on it.
+    ctx = _ctx(NO_INCOME_2026, 2026, date(2026, 8, 28), PRIOR_TO_2026)
+    ctx["invest"] = {"dividends_total": 707.41}
+    tip = _pension_tip(build_tips(ctx))
+    assert any("2026/27: no income entered" in w for w in tip["warnings"])
+
+
+def test_tip_without_income_does_not_cap_at_the_3600_floor():
+    tip = _pension_tip(build_tips(_ctx(NO_INCOME_2026, 2026, date(2026, 8, 28), PRIOR_TO_2026)))
+    assert "£3,600" not in tip["what_to_do"]
+    assert "relevant UK earnings" not in tip["what_to_do"]
+    assert "£110,796.48 gross" in tip["what_to_do"]  # 60,000 assumed + 50,796.48 carried
+    assert "Enter this year's pay and pension figures" in tip["what_to_do"]
+
+
+def test_tip_without_income_hedges_the_title_and_drops_the_saving():
+    tip = _pension_tip(build_tips(_ctx(NO_INCOME_2026, 2026, date(2026, 8, 28), PRIOR_TO_2026)))
+    assert tip["title"] == "Up to £110,796.48 of pension annual allowance unused"
+    # A marginal rate computed off investment income alone is not a saving.
+    assert tip["estimated_win_gbp"] is None
+    assert tip["confidence"] == "low"
+    assert tip["how_to_execute"][0].startswith("First, enter your 2026/27 pay")
+
+
+def test_tip_with_income_entered_gives_the_real_figures():
+    inputs = {
+        **NO_INCOME_2026,
+        "employment_income": 376182.79,
+        "pension_employee": 7067.47,
+        "pension_employer": 10601.27,
+    }
+    tip = _pension_tip(build_tips(_ctx(inputs, 2026, date(2026, 8, 28), PRIOR_TO_2026)))
+    # Own allowance tapers to the £10,000 floor and the workplace contributions
+    # already exceed it, so the excess eats into 2023/24's £50,796.48.
+    assert tip["title"] == "£43,127.74 of pension annual allowance unused"
+    assert tip["estimated_win_gbp"] == round(43127.74 * 0.45)
+    assert tip["confidence"] == "medium"
+    assert not any("no income entered" in w for w in tip["warnings"])
