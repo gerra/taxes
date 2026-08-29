@@ -676,6 +676,8 @@ export interface Step {
   action: string | null
   /** Report step only: computed from documents that have since changed. */
   stale?: boolean
+  /** What moved since the run — named, so the claim can be checked. */
+  changes?: string[]
   run_at?: string | null
 }
 

@@ -129,6 +129,11 @@ CREATE TABLE IF NOT EXISTS planner_inputs (
 # alters an existing table, so these are applied individually when missing.
 _COLUMN_MIGRATIONS = [
     ("users", "last_login_at", "TEXT"),
+    # What the run was computed from, as JSON. The hash beside it answers "is
+    # this the same calculation?" for the cache; this answers "what changed?",
+    # which is the only way an "out of date" claim can be checked rather than
+    # taken on faith. Null on runs made before it was recorded.
+    ("calc_runs", "input_material", "TEXT"),
 ]
 
 

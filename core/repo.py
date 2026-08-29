@@ -450,12 +450,15 @@ def find_calc_run(user_id: int, tax_year: int, input_hash: str) -> dict | None:
         conn.close()
 
 
-def create_calc_run(user_id: int, tax_year: int, input_hash: str) -> dict:
+def create_calc_run(
+    user_id: int, tax_year: int, input_hash: str, input_material: str | None = None
+) -> dict:
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO calc_runs (user_id, tax_year, input_hash) VALUES (?, ?, ?)",
-            (user_id, tax_year, input_hash),
+            """INSERT INTO calc_runs (user_id, tax_year, input_hash, input_material)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, tax_year, input_hash, input_material),
         )
         conn.commit()
         return dict(

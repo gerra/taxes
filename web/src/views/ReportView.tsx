@@ -110,9 +110,9 @@ export default function ReportView({
 
       {step?.stale && !running && (
         <div className="banner warn">
-          <b>These figures are out of date.</b> Your documents or settings changed since this
-          calculation ran, so what you see below is not what your current documents produce.
-          Recalculate before copying anything onto a return.
+          <b>These figures are out of date.</b> Changed since this ran:{' '}
+          {step.changes?.join(', ') || 'the calculation inputs'}. What you see below is not what
+          your current documents produce — recalculate before copying anything onto a return.
         </div>
       )}
 
