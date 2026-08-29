@@ -15,6 +15,7 @@ Every step reports a `state`:
 `next` is the first step that is not `done` — the one thing to do now.
 """
 
+import json
 from datetime import date
 
 from core import coverage, planner_ctx, repo, self_assessment, tax_years
@@ -121,8 +122,49 @@ def _income_step(inputs: dict) -> dict:
     }
 
 
+# What each piece of a run's material is called when it has moved. `balance_check`
+# is deliberately absent: waiving the cash-balance check makes a different run,
+# not a different document set, and treating it as an input marked every waived
+# run out of date the moment it finished.
+_MATERIAL_LABELS = {
+    "docs": "uploaded documents",
+    "spin_offs": "spin-off mappings",
+    "exempt": "the CGT-exempt list",
+    "mappings": "a bank's column mapping",
+    "interest_funds": "the interest-fund list",
+    "fork": "the calculation engine",
+    "engine": "the calculation engine",
+}
+
+
+def _material_changes(before: dict, after: dict) -> list[str]:
+    """What moved between the run's inputs and today's, in words.
+
+    A hash comparison can only assert that something changed, which makes the
+    claim impossible to check and impossible to debug — a false positive looks
+    exactly like a true one."""
+    changes = []
+    for key, label in _MATERIAL_LABELS.items():
+        old, new = before.get(key), after.get(key)
+        if old == new:
+            continue
+        if key == "docs" and isinstance(old, list) and isinstance(new, list):
+            old_set = {tuple(d) for d in old}
+            new_set = {tuple(d) for d in new}
+            added, removed = len(new_set - old_set), len(old_set - new_set)
+            parts = []
+            if added:
+                parts.append(f"{added} added")
+            if removed:
+                parts.append(f"{removed} removed")
+            changes.append(f"{label} ({', '.join(parts)})" if parts else label)
+        else:
+            changes.append(label)
+    return changes
+
+
 def _report_step(
-    user_id: int, tax_year: int, checklist: dict, current_hashes: set[str] | None
+    user_id: int, tax_year: int, checklist: dict, current_material: dict | None
 ) -> dict:
     run = repo.latest_ok_run(user_id, tax_year)
     if not run:
@@ -132,24 +174,31 @@ def _report_step(
             "detail": "Replays your whole transaction history against HMRC's rules.",
             "action": "Calculate",
             "stale": False,
+            "changes": [],
             "run_at": None,
         }
-    # No hashes from the caller means staleness is simply unknown — better to
-    # say nothing than to call a good report out of date, or a stale one
-    # current. More than one is expected: the engine hashes a waived
-    # cash-balance run differently, and that is a run option, not an input.
-    stale = bool(current_hashes) and run["input_hash"] not in current_hashes
     run_at = run["finished_at"] or run["created_at"]
-    if stale:
+    # A run made before the material was recorded can only be guessed at, and a
+    # wrong guess here is worse than silence: it condemns a perfectly good
+    # report and re-running never clears it, because the next run is judged the
+    # same way. Say nothing until there is something real to compare.
+    stored = run.get("input_material")
+    changes = (
+        _material_changes(json.loads(stored), current_material)
+        if stored and current_material
+        else []
+    )
+    if changes:
         return {
             "state": "attention",
             "headline": "Out of date",
             "detail": (
-                "Documents or settings changed since this ran, so the figures on it are not "
+                f"Changed since this ran: {', '.join(changes)}. The figures below are not "
                 "the ones your current documents produce."
             ),
             "action": "Recalculate",
             "stale": True,
+            "changes": changes,
             "run_at": run_at,
         }
     if checklist["overall"] not in ("ok",):
@@ -159,6 +208,7 @@ def _report_step(
             "detail": "Computed from an incomplete document set — the figures may move.",
             "action": "Fill document gaps",
             "stale": False,
+            "changes": [],
             "run_at": run_at,
         }
     return {
@@ -167,6 +217,7 @@ def _report_step(
         "detail": "Computed from every document currently uploaded.",
         "action": None,
         "stale": False,
+        "changes": [],
         "run_at": run_at,
     }
 
@@ -207,15 +258,15 @@ def build(
     user_id: int,
     tax_year: int,
     today: date | None = None,
-    current_hashes: set[str] | None = None,
+    current_material: dict | None = None,
 ) -> dict | None:
     """Every step's state for one tax year, plus the one thing to do next.
 
-    `current_hashes` is every hash the engine would accept for the documents as
-    they stand now (see `runner.current_input_hashes`); passing them is what
-    lets the report step notice it was calculated from a document set that has
-    since changed. They are passed in rather than computed here so that this
-    module stays clear of the engine."""
+    `current_material` is what the engine would calculate from today (see
+    `runner.input_material`); comparing it against what the run recorded is what
+    lets the report step say the documents have moved, and name what moved. It
+    is passed in rather than computed here so this module stays clear of the
+    engine."""
     year = tax_years.get_year(tax_year)
     if not year:
         return None
@@ -229,7 +280,7 @@ def build(
     steps = {
         "documents": _documents_step(checklist),
         "income": _income_step(inputs),
-        "report": _report_step(user_id, tax_year, checklist, current_hashes),
+        "report": _report_step(user_id, tax_year, checklist, current_material),
         "plan": _plan_step(tips, inputs, in_progress),
     }
     for key, step in steps.items():

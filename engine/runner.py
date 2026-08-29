@@ -306,39 +306,45 @@ def build_document_set(user_id: int, work_dir: str) -> tuple[dict, list[str]]:
     return files, warnings
 
 
-def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) -> str:
-    material = {
+def input_material(user_id: int, tax_year: int, balance_check: bool = True) -> dict:
+    """Everything a calculation's result depends on, as plain data.
+
+    Hashed, it is the cache key. Stored beside the run, it is what lets a later
+    "these figures are out of date" name what changed, rather than assert it
+    from a hash comparison nobody can check.
+
+    Every value here is JSON-native — lists, not tuples — so that what comes
+    back out of the database compares equal to what goes in. A tuple survives
+    `json.dumps` for hashing (it serialises identically to a list, so cache keys
+    are unaffected) but never survives the round trip, which would make every
+    stored run differ from every live one and mark it permanently out of date."""
+    return {
         "tax_year": tax_year,
         "fork": fork_version(),
         "engine": ENGINE_VERSION,
         # A run with the cash-balance check waived is a different calculation,
         # so it must not be served from (or overwrite) a checked run's cache.
+        # It is a run option, not an input: core.status ignores it when asking
+        # whether the documents have moved.
         "balance_check": balance_check,
-        "docs": sorted((d["account_id"], d["sha256"]) for d in repo.list_documents(user_id)),
-        "spin_offs": sorted((r["dst"], r["src"]) for r in repo.list_spin_offs(user_id)),
+        "docs": sorted([d["account_id"], d["sha256"]] for d in repo.list_documents(user_id)),
+        "spin_offs": sorted([r["dst"], r["src"]] for r in repo.list_spin_offs(user_id)),
         "exempt": sorted(r["name"] for r in repo.list_exempt_securities(user_id)),
         "interest_funds": sorted(estimator.KNOWN_INTEREST_FUNDS),
         "mappings": sorted(
-            (a["id"], json.dumps(repo.get_column_mapping(a["id"]), sort_keys=True))
+            [a["id"], json.dumps(repo.get_column_mapping(a["id"]), sort_keys=True)]
             for a in repo.list_accounts(user_id)
             if a["type"] == "bank_generic"
         ),
     }
+
+
+def hash_material(material: dict) -> str:
     return hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
 
 
-def current_input_hashes(user_id: int, tax_year: int) -> set[str]:
-    """Every hash the documents as they stand now could legitimately produce.
-
-    Staleness — "was this report computed from the documents I have now?" — is a
-    different question from the cache key, which also folds in `balance_check`
-    because a waived run is a different calculation and must never be served
-    from a checked run's cache. `balance_check` is a run option, not an input,
-    so a report matches if it matches under either mode. Comparing against the
-    checked hash alone marks every waived run out of date the moment it
-    finishes, which for a document set that cannot pass the check (a Freetrade
-    export missing its old top-ups) is every run there will ever be."""
-    return {compute_input_hash(user_id, tax_year, check) for check in (True, False)}
+def compute_input_hash(user_id: int, tax_year: int, balance_check: bool = True) -> str:
+    return hash_material(input_material(user_id, tax_year, balance_check))
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -382,13 +388,14 @@ def run_calculation(
     inferred: partial exports and genuinely missing trades fail it the same way,
     and only the user knows which they have, so the failure is reported and the
     waiver is an explicit choice made in the UI."""
-    input_hash = compute_input_hash(user_id, tax_year, balance_check)
+    material = input_material(user_id, tax_year, balance_check)
+    input_hash = hash_material(material)
     if not force:
         existing = repo.find_calc_run(user_id, tax_year, input_hash)
         if existing and existing["status"] == "ok":
             return existing
 
-    run = repo.create_calc_run(user_id, tax_year, input_hash)
+    run = repo.create_calc_run(user_id, tax_year, input_hash, json.dumps(material))
     work_dir = os.path.join(paths.TMP_DIR, f"run_{run['id']}")
     os.makedirs(work_dir, exist_ok=True)
     try:

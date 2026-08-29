@@ -108,6 +108,20 @@ def _refresh_auth_cookie(response):
 
 
 @app.after_request
+def _no_store_api(response):
+    """Never let a browser cache an API response.
+
+    Flask sends no Cache-Control on jsonify, which leaves these open to
+    heuristic caching. For most endpoints that is merely stale data; for
+    /api/status it is self-defeating, because the endpoint exists to say whether
+    what you are looking at is current — a cached "out of date" keeps saying so
+    however many times you regenerate the report."""
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
+
+
+@app.after_request
 def _log_api_errors(response):
     """Log every failed /api response with its reason, so the journal never
     shows a bare 4xx/5xx access-log line. Client errors are warnings, except the

@@ -6,6 +6,7 @@ happens in and what is blocking, which is the whole reason the rail can answer
 "what do I do now" without the user having to hold the pipeline in their head.
 """
 
+import json
 from datetime import date
 
 import pytest
@@ -66,45 +67,79 @@ def _report(uid, **kwargs):
     return next(s for s in data["steps"] if s["key"] == "report")
 
 
-def test_a_report_run_from_documents_that_have_since_changed_reads_stale(uid):
-    run = repo.create_calc_run(uid, YEAR, "hash-at-the-time")
+def _ok_run(uid, material: dict | None):
+    run = repo.create_calc_run(
+        uid, YEAR, "irrelevant", json.dumps(material) if material is not None else None
+    )
     repo.set_calc_run_status(run["id"], "ok", bundle="{}")
 
-    report = _report(uid, current_hashes={"hash-at-the-time"})
-    # Documents are still incomplete, so it reads provisional rather than
-    # settled — but it is not out of date, which is a different complaint.
-    assert report["stale"] is False
-    assert report["headline"] == "Provisional"
 
-    report = _report(uid, current_hashes={"a-different-hash"})
+BASE = {
+    "tax_year": YEAR,
+    "fork": "abc",
+    "engine": 4,
+    "balance_check": True,
+    "docs": [[1, "sha-a"]],
+    "spin_offs": [],
+    "exempt": [],
+    "interest_funds": [],
+    "mappings": [],
+}
+
+
+def test_out_of_date_names_what_changed(uid):
+    """An assertion nobody can check is how the false positive survived: a
+    wrong "out of date" looked exactly like a right one."""
+    _ok_run(uid, BASE)
+
+    report = _report(uid, current_material={**BASE, "docs": [[1, "sha-a"], [1, "sha-b"]]})
     assert report["stale"] is True
-    assert report["state"] == "attention"
     assert report["headline"] == "Out of date"
+    assert report["changes"] == ["uploaded documents (1 added)"]
+    assert "1 added" in report["detail"]
 
 
 def test_a_waived_balance_check_is_a_run_option_not_a_changed_input(uid):
-    """The regression: every run read "Out of date" the moment it finished.
+    """The regression: every report read "Out of date" the moment it finished.
 
     The engine folds `balance_check` into its cache key, because a waived run is
     a different calculation and must not be served from a checked run's cache.
-    Comparing staleness against the checked hash alone therefore condemned every
-    waived run — which, for a document set that cannot pass the check (a
-    Freetrade export missing its old top-ups), is every run there will ever
-    be."""
-    run = repo.create_calc_run(uid, YEAR, "hash-waived")
-    repo.set_calc_run_status(run["id"], "ok", bundle="{}")
-
-    # What the endpoint passes: both modes over the same documents.
-    report = _report(uid, current_hashes={"hash-checked", "hash-waived"})
+    Treating it as an input condemned every waived run — which, for a document
+    set that cannot pass the check (a Freetrade export missing its old top-ups),
+    is every run there will ever be."""
+    _ok_run(uid, {**BASE, "balance_check": False})
+    report = _report(uid, current_material={**BASE, "balance_check": True})
     assert report["stale"] is False
+    assert report["changes"] == []
 
 
-def test_staleness_is_unknown_rather_than_asserted_without_hashes(uid):
-    """Better to say nothing than to call a good report out of date."""
-    run = repo.create_calc_run(uid, YEAR, "h")
-    repo.set_calc_run_status(run["id"], "ok", bundle="{}")
+def test_unchanged_inputs_are_never_stale(uid):
+    _ok_run(uid, BASE)
+    assert _report(uid, current_material=dict(BASE))["stale"] is False
+
+
+def test_the_material_survives_the_database_round_trip(uid):
+    """The second way "Out of date" became permanent.
+
+    The material is stored as JSON. A Python tuple hashes identically to a list,
+    so the cache never noticed, but it comes back out of SQLite as a list — so
+    every stored run differed from every live one on `docs`, `spin_offs` and
+    `mappings`, and no amount of regenerating could ever clear it."""
+    from engine import runner
+
+    live = runner.input_material(uid, YEAR)
+    assert json.loads(json.dumps(live)) == live
+
+    _ok_run(uid, live)
+    assert _report(uid, current_material=runner.input_material(uid, YEAR))["stale"] is False
+
+
+def test_a_run_predating_the_recorded_material_claims_nothing(uid):
+    """Guessing is worse than silence here: a wrong guess condemns a good report
+    and re-running never clears it, because the next run is judged the same."""
+    _ok_run(uid, None)
+    assert _report(uid, current_material=dict(BASE))["stale"] is False
     assert _report(uid)["stale"] is False
-    assert _report(uid, current_hashes=set())["stale"] is False
 
 
 def test_the_deadline_is_what_the_year_is_actually_running_towards(uid):
@@ -121,17 +156,16 @@ def test_the_deadline_is_what_the_year_is_actually_running_towards(uid):
 
 
 def test_a_freshly_finished_run_is_never_out_of_date(auth_client):
-    """End to end, through the engine's own hashing, both ways round.
+    """End to end, through the engine's own recording, both ways round.
 
-    The bug this pins was invisible to a unit test with made-up hashes: it lived
-    in the gap between what the engine stores and what the status asked it
-    for."""
+    The bug this pins was invisible to a unit test with made-up values: it lived
+    in the gap between what the engine stores and what status asked it for."""
     from engine import runner
 
     uid = auth_client.user["id"]
     for waived in (False, True):
-        stored = runner.compute_input_hash(uid, 2022, balance_check=not waived)
-        run = repo.create_calc_run(uid, 2022, stored)
+        material = runner.input_material(uid, 2022, balance_check=not waived)
+        run = repo.create_calc_run(uid, 2022, runner.hash_material(material), json.dumps(material))
         repo.set_calc_run_status(run["id"], "ok", bundle="{}")
         report = next(
             s
@@ -139,6 +173,14 @@ def test_a_freshly_finished_run_is_never_out_of_date(auth_client):
             if s["key"] == "report"
         )
         assert report["stale"] is False, f"waived={waived} run read as out of date"
+
+
+def test_the_status_response_is_never_cached(auth_client):
+    """An endpoint whose job is to say whether what you see is current must not
+    itself be served from cache: one stale reading would keep saying "out of
+    date" however many times the report is regenerated."""
+    resp = auth_client.get(f"/api/status/{YEAR}")
+    assert "no-store" in resp.headers.get("Cache-Control", "")
 
 
 def test_the_endpoint_serves_the_same_picture(auth_client):
