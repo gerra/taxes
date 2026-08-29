@@ -259,6 +259,7 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
             <div key={i} className="gap-item">
               <span
                 className="gap-row tip-wrap"
+                tabIndex={0}
                 data-tip={`No uploaded document contains transactions between ${shortDate(g.start)} and ${shortDate(g.end)} (${gapDays(g)} days). The Section 104 pool needs your full history, so the calculation may be wrong until this period is covered — unless there genuinely was no activity, in which case confirm that.\n\nHow to get it: ${coverage.instructions}`}
               >
                 Missing <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>{' '}
@@ -278,6 +279,7 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
             <div key={`s${i}`} className="gap-item">
               <span
                 className="gap-row soft tip-wrap"
+                tabIndex={0}
                 data-tip={`Small seam between documents: ${shortDate(g.start)} → ${shortDate(g.end)} (${gapDays(g)} days). Short breaks like this are usually just days with no transactions — only re-export if you traded then.`}
               >
                 Small seam <b>{shortDate(g.start)}</b> → <b>{shortDate(g.end)}</b>{' '}
@@ -321,6 +323,7 @@ function AccountCard({ coverage, onChange }: { coverage: AccountCoverage; onChan
                   {d.warnings.length > 0 && (
                     <span
                       className="badge warn tip-wrap"
+                      tabIndex={0}
                       data-tip={d.warnings.map((w) => `• ${w}`).join('\n\n')}
                     >
                       {d.warnings.length}⚠

@@ -118,53 +118,55 @@ export default function AdminView({ onPendingCount }: Props) {
             when they sign in with Google and aren’t allowed.
           </p>
         ) : (
-          <table className="sa-table admin-table">
-            <thead>
-              <tr>
-                <th>Who</th>
-                <th>Message</th>
-                <th>When</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {data.pending.map((r) => (
-                <tr key={r.email}>
-                  <td>
-                    <div className="admin-email">{r.email}</div>
-                    {r.name && <div className="muted small">{r.name}</div>}
-                  </td>
-                  <td className="admin-note">{r.note || <span className="muted">—</span>}</td>
-                  <td className="small">
-                    {r.attempts === 0 ? (
-                      <>asked {fmtWhen(r.last_seen)}</>
-                    ) : (
-                      <>
-                        {r.attempts}× · last {fmtWhen(r.last_seen)}
-                      </>
-                    )}
-                    {r.attempts > 1 && <div className="muted">first {fmtWhen(r.first_seen)}</div>}
-                  </td>
-                  <td className="admin-actions">
-                    <button
-                      className="btn primary small"
-                      disabled={busy === r.email}
-                      onClick={() => act('approve', r.email)}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="link danger"
-                      disabled={busy === r.email}
-                      onClick={() => decline(r.email)}
-                    >
-                      Decline
-                    </button>
-                  </td>
+          <div className="table-scroll">
+            <table className="sa-table admin-table">
+              <thead>
+                <tr>
+                  <th>Who</th>
+                  <th>Message</th>
+                  <th>When</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.pending.map((r) => (
+                  <tr key={r.email}>
+                    <td>
+                      <div className="admin-email">{r.email}</div>
+                      {r.name && <div className="muted small">{r.name}</div>}
+                    </td>
+                    <td className="admin-note">{r.note || <span className="muted">—</span>}</td>
+                    <td className="small">
+                      {r.attempts === 0 ? (
+                        <>asked {fmtWhen(r.last_seen)}</>
+                      ) : (
+                        <>
+                          {r.attempts}× · last {fmtWhen(r.last_seen)}
+                        </>
+                      )}
+                      {r.attempts > 1 && <div className="muted">first {fmtWhen(r.first_seen)}</div>}
+                    </td>
+                    <td className="admin-actions">
+                      <button
+                        className="btn primary small"
+                        disabled={busy === r.email}
+                        onClick={() => act('approve', r.email)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="link danger"
+                        disabled={busy === r.email}
+                        onClick={() => decline(r.email)}
+                      >
+                        Decline
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
@@ -173,51 +175,53 @@ export default function AdminView({ onPendingCount }: Props) {
           <h3>Allowed</h3>
           <span className="badge ok">{data.allowed.length}</span>
         </div>
-        <table className="sa-table admin-table">
-          <thead>
-            <tr>
-              <th>Who</th>
-              <th>Last sign-in</th>
-              <th>Approved</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {data.allowed.map((r) => (
-              <tr key={r.email}>
-                <td>
-                  <div className="admin-email">
-                    {r.email}
-                    {r.admin && <span className="badge year">admin</span>}
-                  </div>
-                  {r.name && <div className="muted small">{r.name}</div>}
-                  {r.note && <div className="admin-note small">“{r.note}”</div>}
-                </td>
-                <td className="small">
-                  {r.last_login_at ? (
-                    fmtWhen(r.last_login_at)
-                  ) : (
-                    <span className="muted">never</span>
-                  )}
-                </td>
-                <td className="small">
-                  {r.decided_at ? fmtWhen(r.decided_at) : <span className="muted">—</span>}
-                </td>
-                <td className="admin-actions">
-                  {!r.admin && (
-                    <button
-                      className="link danger"
-                      disabled={busy === r.email}
-                      onClick={() => revoke(r.email)}
-                    >
-                      Revoke
-                    </button>
-                  )}
-                </td>
+        <div className="table-scroll">
+          <table className="sa-table admin-table">
+            <thead>
+              <tr>
+                <th>Who</th>
+                <th>Last sign-in</th>
+                <th>Approved</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.allowed.map((r) => (
+                <tr key={r.email}>
+                  <td>
+                    <div className="admin-email">
+                      {r.email}
+                      {r.admin && <span className="badge year">admin</span>}
+                    </div>
+                    {r.name && <div className="muted small">{r.name}</div>}
+                    {r.note && <div className="admin-note small">“{r.note}”</div>}
+                  </td>
+                  <td className="small">
+                    {r.last_login_at ? (
+                      fmtWhen(r.last_login_at)
+                    ) : (
+                      <span className="muted">never</span>
+                    )}
+                  </td>
+                  <td className="small">
+                    {r.decided_at ? fmtWhen(r.decided_at) : <span className="muted">—</span>}
+                  </td>
+                  <td className="admin-actions">
+                    {!r.admin && (
+                      <button
+                        className="link danger"
+                        disabled={busy === r.email}
+                        onClick={() => revoke(r.email)}
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         <form className="admin-add" onSubmit={addEmail}>
           <input
             type="email"
@@ -238,51 +242,53 @@ export default function AdminView({ onPendingCount }: Props) {
             <h3>Declined</h3>
             <span className="badge bad">{data.declined.length}</span>
           </div>
-          <table className="sa-table admin-table">
-            <thead>
-              <tr>
-                <th>Who</th>
-                <th>Message</th>
-                <th>Declined</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {data.declined.map((r) => (
-                <tr key={r.email}>
-                  <td>
-                    <div className="admin-email">{r.email}</div>
-                    {r.name && <div className="muted small">{r.name}</div>}
-                  </td>
-                  <td className="admin-note">{r.note || <span className="muted">—</span>}</td>
-                  <td className="small">
-                    {fmtWhen(r.decided_at)}
-                    {r.attempts > 0 && (
-                      <div className="muted">
-                        {r.attempts}× tried · last {fmtWhen(r.last_seen)}
-                      </div>
-                    )}
-                  </td>
-                  <td className="admin-actions">
-                    <button
-                      className="link primary"
-                      disabled={busy === r.email}
-                      onClick={() => act('approve', r.email)}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="link"
-                      disabled={busy === r.email}
-                      onClick={() => act('forget', r.email)}
-                    >
-                      Forget
-                    </button>
-                  </td>
+          <div className="table-scroll">
+            <table className="sa-table admin-table">
+              <thead>
+                <tr>
+                  <th>Who</th>
+                  <th>Message</th>
+                  <th>Declined</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.declined.map((r) => (
+                  <tr key={r.email}>
+                    <td>
+                      <div className="admin-email">{r.email}</div>
+                      {r.name && <div className="muted small">{r.name}</div>}
+                    </td>
+                    <td className="admin-note">{r.note || <span className="muted">—</span>}</td>
+                    <td className="small">
+                      {fmtWhen(r.decided_at)}
+                      {r.attempts > 0 && (
+                        <div className="muted">
+                          {r.attempts}× tried · last {fmtWhen(r.last_seen)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="admin-actions">
+                      <button
+                        className="link primary"
+                        disabled={busy === r.email}
+                        onClick={() => act('approve', r.email)}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="link"
+                        disabled={busy === r.email}
+                        onClick={() => act('forget', r.email)}
+                      >
+                        Forget
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

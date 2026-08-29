@@ -60,24 +60,26 @@ export default function HistoryView({ onChange }: { onChange: () => void }) {
       )}
 
       {data.years.length > 0 && (
-        <table className="sa-table history-table">
-          <thead>
-            <tr>
-              <th>Year</th>
-              <th className="num">Estimated bill</th>
-              <th className="num">Investment only</th>
-              <th className="num">PAYE shortfall</th>
-              <th className="num">Actually paid</th>
-              <th className="num">Difference</th>
-              <th>Due</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.years.map((y) => (
-              <HistoryRow key={y.tax_year} year={y} onSave={saveActual} />
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="sa-table history-table">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th className="num">Estimated bill</th>
+                <th className="num">Investment only</th>
+                <th className="num">PAYE shortfall</th>
+                <th className="num">Actually paid</th>
+                <th className="num">Difference</th>
+                <th>Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.years.map((y) => (
+                <HistoryRow key={y.tax_year} year={y} onSave={saveActual} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {compared.length === 0 && data.years.length > 0 && (

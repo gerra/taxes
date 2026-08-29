@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import StepRail from './components/StepRail'
 import { useAuth } from './hooks/useAuth'
+import { useTipTaps } from './hooks/useTipTaps'
 import type { StepKey, YearStatus } from './types'
 import { currentTaxYear, lastElapsedTaxYear, shortDate, taxYearLabel } from './utils/format'
 import AdminView from './views/AdminView'
@@ -19,13 +20,27 @@ type Page = StepKey | 'history' | 'admin'
 const LATEST_FILED = lastElapsedTaxYear()
 const IN_PROGRESS = currentTaxYear()
 
+// What the way out of Admin is called, so the link back can name its destination.
+const PAGE_NAMES: Record<Page, string> = {
+  documents: 'Documents',
+  income: 'Income',
+  report: 'Report',
+  plan: 'Plan',
+  history: 'History',
+  admin: 'Admin',
+}
+
 export default function App() {
   const { user, loading, logout } = useAuth()
+  useTipTaps()
   const [page, setPage] = useState<Page>('documents')
   // The landing step is chosen once, from the first status that arrives: the
   // app opens where the work actually is rather than always at step one. Only
   // once — after that the user is navigating, and moving them would be rude.
   const landed = useRef(false)
+  // Admin isn't a step, so it hides the rail — which leaves the link that
+  // opened it as the only way back out. Remember where "back" is.
+  const beforeAdmin = useRef<Page>('report')
   const [year, setYear] = useState(LATEST_FILED)
   // Only years the backend has constants for (core/tax_years.py), newest first;
   // the running year is included, marked so nobody files off it.
@@ -97,16 +112,32 @@ export default function App() {
               </option>
             ))}
           </select>
-          {user.is_admin && (
-            <button
-              className={page === 'admin' ? 'link active' : 'link'}
-              onClick={() => setPage('admin')}
-              title="Manage who can sign in"
-            >
-              Admin
-              {pending > 0 && <span className="tab-count">{pending}</span>}
-            </button>
-          )}
+        </div>
+        {/* The account controls are their own group so a phone can put them on
+            the brand's row and give the year picker a line of its own. */}
+        <div className="topbar-account">
+          {user.is_admin &&
+            (page === 'admin' ? (
+              <button
+                className="link"
+                onClick={() => setPage(beforeAdmin.current)}
+                title={`Back to ${PAGE_NAMES[beforeAdmin.current]}`}
+              >
+                ← {PAGE_NAMES[beforeAdmin.current]}
+              </button>
+            ) : (
+              <button
+                className="link"
+                onClick={() => {
+                  beforeAdmin.current = page
+                  setPage('admin')
+                }}
+                title="Manage who can sign in"
+              >
+                Admin
+                {pending > 0 && <span className="tab-count">{pending}</span>}
+              </button>
+            ))}
           <button className="link" onClick={logout} title={user.email}>
             Sign out
           </button>

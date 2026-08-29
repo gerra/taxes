@@ -201,7 +201,7 @@ function ProfileSummary({ data }: { data: PlannerData }) {
       defaultOpen={false}
     >
       <div className="cards-row">
-        <div className="stat-card tip-wrap" data-tip={aniTip}>
+        <div className="stat-card tip-wrap" tabIndex={0} data-tip={aniTip}>
           <div className="stat-title">Adjusted net income</div>
           <div className="stat-value">{gbp(p.income.adjusted_net_income, 0)}</div>
           <div className="muted small">
@@ -209,12 +209,12 @@ function ProfileSummary({ data }: { data: PlannerData }) {
             {p.bands.in_pa_taper && ' · in the 60% zone'}
           </div>
         </div>
-        <div className="stat-card tip-wrap" data-tip={paTip}>
+        <div className="stat-card tip-wrap" tabIndex={0} data-tip={paTip}>
           <div className="stat-title">Personal allowance</div>
           <div className="stat-value">{gbp(p.allowances.personal_allowance, 0)}</div>
           <div className="muted small">{p.bands.in_pa_taper ? 'tapered' : 'full allowance'}</div>
         </div>
-        <div className="stat-card tip-wrap" data-tip={taxTip}>
+        <div className="stat-card tip-wrap" tabIndex={0} data-tip={taxTip}>
           <div className="stat-title">Est. tax on investments</div>
           <div className="stat-value">
             {gbp(p.tax.dividend_tax + p.tax.savings_tax + p.tax.cgt_total)}
@@ -224,13 +224,13 @@ function ProfileSummary({ data }: { data: PlannerData }) {
             {gbp(p.tax.cgt_total, 0)}
           </div>
         </div>
-        <div className="stat-card tip-wrap" data-tip={marginalTip}>
+        <div className="stat-card tip-wrap" tabIndex={0} data-tip={marginalTip}>
           <div className="stat-title">Marginal relief rate</div>
           <div className="stat-value">{pct(p.marginal.effective_rate)}</div>
           <div className="muted small">what £1 of pension contribution saves</div>
         </div>
         <p className="muted small" style={{ gridColumn: '1 / -1', margin: 0 }}>
-          Hover any card to see exactly how it was computed.
+          Tap or hover any card to see exactly how it was computed.
         </p>
       </div>
     </Section>
@@ -267,18 +267,20 @@ function YearParameters({ groups, label }: { groups: YearParameterGroup[] | null
                 source
               </a>
             </h4>
-            <table className="sa-table">
-              <tbody>
-                {g.rows.map((r) => (
-                  <tr key={r.label}>
-                    <td>{r.label}</td>
-                    <td className="num">
-                      {r.kind === 'money' ? gbp(r.value as number, 0) : r.value}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="sa-table">
+                <tbody>
+                  {g.rows.map((r) => (
+                    <tr key={r.label}>
+                      <td>{r.label}</td>
+                      <td className="num">
+                        {r.kind === 'money' ? gbp(r.value as number, 0) : r.value}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ))}
       </div>

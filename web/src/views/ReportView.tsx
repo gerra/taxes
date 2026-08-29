@@ -289,35 +289,37 @@ function BalanceErrorCard({
 
 function BalanceLedgerTable({ rows, currency }: { rows: BalanceLedgerRow[]; currency: string }) {
   return (
-    <table className="balance-ledger">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Transaction</th>
-          <th className="right">Amount ({currency})</th>
-          <th className="right">Balance</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) =>
-          r.note ? (
-            <tr key={i} className="ledger-note">
-              <td colSpan={4}>{r.note}</td>
-            </tr>
-          ) : (
-            <tr key={i} className={Number(r.balance) < 0 ? 'ledger-negative' : undefined}>
-              <td>{shortDate(r.date)}</td>
-              <td>
-                {r.description || r.symbol || '—'}
-                {r.action && <span className="ledger-action">{r.action.toLowerCase()}</span>}
-              </td>
-              <td className="right">{num(r.amount)}</td>
-              <td className="right">{num(r.balance)}</td>
-            </tr>
-          ),
-        )}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="balance-ledger">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Transaction</th>
+            <th className="right">Amount ({currency})</th>
+            <th className="right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) =>
+            r.note ? (
+              <tr key={i} className="ledger-note">
+                <td colSpan={4}>{r.note}</td>
+              </tr>
+            ) : (
+              <tr key={i} className={Number(r.balance) < 0 ? 'ledger-negative' : undefined}>
+                <td>{shortDate(r.date)}</td>
+                <td>
+                  {r.description || r.symbol || '—'}
+                  {r.action && <span className="ledger-action">{r.action.toLowerCase()}</span>}
+                </td>
+                <td className="right">{num(r.amount)}</td>
+                <td className="right">{num(r.balance)}</td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -337,16 +339,18 @@ function ErrorTransactionTable({ tx }: { tx: ErrorTransaction }) {
     ['Broker', tx.broker],
   ]
   return (
-    <table className="error-transaction">
-      <tbody>
-        {rows.map(([k, v]) => (
-          <tr key={k}>
-            <th>{k}</th>
-            <td>{v}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="error-transaction">
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k}>
+              <th>{k}</th>
+              <td>{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
@@ -438,22 +442,24 @@ function ReportBody({
         title="What goes on the return"
         meta={`${view.sa_boxes.length} box${view.sa_boxes.length === 1 ? '' : 'es'}`}
       >
-        <table className="sa-table">
-          <thead>
-            <tr>
-              <th>Form</th>
-              <th>Box</th>
-              <th>Figure</th>
-              <th className="num">Value</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {view.sa_boxes.map((b) => (
-              <SARow key={`${b.form}-${b.box}-${b.label}`} box={b} />
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table className="sa-table">
+            <thead>
+              <tr>
+                <th>Form</th>
+                <th>Box</th>
+                <th>Figure</th>
+                <th className="num">Value</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.sa_boxes.map((b) => (
+                <SARow key={`${b.form}-${b.box}-${b.label}`} box={b} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Section>
 
       <Section
@@ -475,32 +481,34 @@ function ReportBody({
           title="Dividends as the broker reported them"
           meta={`${bundle.dividends.length} payment${bundle.dividends.length === 1 ? '' : 's'}`}
         >
-          <table className="sa-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Symbol</th>
-                <th>Source</th>
-                <th className="num">Gross (GBP)</th>
-                <th className="num">Withheld</th>
-                <th className="num">Treaty relief</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bundle.dividends.map((d, i) => (
-                <tr key={i}>
-                  <td>{shortDate(d.date)}</td>
-                  <td>{d.symbol}</td>
-                  <td className="muted">
-                    {d.country === 'GB' ? 'UK' : d.country ? `Foreign (${d.country})` : '—'}
-                  </td>
-                  <td className="num">{gbp(d.amount_gbp)}</td>
-                  <td className="num">{gbp(d.tax_at_source_gbp)}</td>
-                  <td className="num">{d.treaty ? gbp(d.treaty.relief_gbp) : '—'}</td>
+          <div className="table-scroll">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Symbol</th>
+                  <th>Source</th>
+                  <th className="num">Gross (GBP)</th>
+                  <th className="num">Withheld</th>
+                  <th className="num">Treaty relief</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {bundle.dividends.map((d, i) => (
+                  <tr key={i}>
+                    <td>{shortDate(d.date)}</td>
+                    <td>{d.symbol}</td>
+                    <td className="muted">
+                      {d.country === 'GB' ? 'UK' : d.country ? `Foreign (${d.country})` : '—'}
+                    </td>
+                    <td className="num">{gbp(d.amount_gbp)}</td>
+                    <td className="num">{gbp(d.tax_at_source_gbp)}</td>
+                    <td className="num">{d.treaty ? gbp(d.treaty.relief_gbp) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
 
@@ -515,26 +523,28 @@ function ReportBody({
             withheld) and share-lending fees (under the broker). Goes in SA100 box 17, tax in box 19
             — not dividends, not interest.
           </p>
-          <table className="sa-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Source</th>
-                <th className="num">Gross (GBP)</th>
-                <th className="num">Tax taken off</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bundle.other_income!.map((r, i) => (
-                <tr key={i}>
-                  <td>{shortDate(r.date)}</td>
-                  <td>{r.source}</td>
-                  <td className="num">{gbp(r.amount_gbp)}</td>
-                  <td className="num">{parseFloat(r.tax_gbp) > 0 ? gbp(r.tax_gbp) : '—'}</td>
+          <div className="table-scroll">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Source</th>
+                  <th className="num">Gross (GBP)</th>
+                  <th className="num">Tax taken off</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {bundle.other_income!.map((r, i) => (
+                  <tr key={i}>
+                    <td>{shortDate(r.date)}</td>
+                    <td>{r.source}</td>
+                    <td className="num">{gbp(r.amount_gbp)}</td>
+                    <td className="num">{parseFloat(r.tax_gbp) > 0 ? gbp(r.tax_gbp) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
 
@@ -546,17 +556,19 @@ function ReportBody({
             bundle.interest_by_source.length === 1 ? '' : 's'
           }`}
         >
-          <table className="sa-table">
-            <tbody>
-              {bundle.interest_by_source.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.broker}</td>
-                  <td>{r.currency === 'GBP' ? 'UK' : `Foreign (${r.currency})`}</td>
-                  <td className="num">{gbp(r.amount_gbp)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="sa-table">
+              <tbody>
+                {bundle.interest_by_source.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.broker}</td>
+                    <td>{r.currency === 'GBP' ? 'UK' : `Foreign (${r.currency})`}</td>
+                    <td className="num">{gbp(r.amount_gbp)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
 
@@ -568,24 +580,26 @@ function ReportBody({
             bundle.portfolio_eoy.length === 1 ? '' : 's'
           }`}
         >
-          <table className="sa-table">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th className="num">Quantity</th>
-                <th className="num">Pooled cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {bundle.portfolio_eoy.map((p) => (
-                <tr key={p.symbol}>
-                  <td>{p.symbol}</td>
-                  <td className="num">{num(p.quantity, 4)}</td>
-                  <td className="num">{gbp(p.pool_cost)}</td>
+          <div className="table-scroll">
+            <table className="sa-table">
+              <thead>
+                <tr>
+                  <th>Symbol</th>
+                  <th className="num">Quantity</th>
+                  <th className="num">Pooled cost</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {bundle.portfolio_eoy.map((p) => (
+                  <tr key={p.symbol}>
+                    <td>{p.symbol}</td>
+                    <td className="num">{num(p.quantity, 4)}</td>
+                    <td className="num">{gbp(p.pool_cost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Section>
       )}
     </div>
@@ -656,54 +670,56 @@ function DistributionsTable({ rows }: { rows: DistributionRow[] }) {
         holding more than 60% interest-bearing assets are interest. Neither uses the dividend
         allowance. Click a row for the reasoning.
       </p>
-      <table className="sa-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Ticker</th>
-            <th>Classified as</th>
-            <th className="num">Gross</th>
-            <th className="num">FX rate</th>
-            <th className="num">GBP</th>
-            <th className="num">Withheld</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <Fragment key={i}>
-              <tr className="sa-row" onClick={() => setOpen(open === i ? null : i)}>
-                <td>{shortDate(r.date)}</td>
-                <td>{r.symbol ?? r.source ?? '—'}</td>
-                <td>{KIND_LABEL[r.kind]}</td>
-                <td className="num">
-                  {r.gross ? `${num(r.gross)} ${r.currency ?? ''}`.trim() : (r.currency ?? '—')}
-                </td>
-                <td className="num">{r.fx_rate ? num(r.fx_rate, 4) : '—'}</td>
-                <td className="num">
-                  <b>{gbp(r.gross_gbp)}</b>
-                </td>
-                <td className="num">{r.withheld_gbp > 0 ? gbp(r.withheld_gbp) : '—'}</td>
-              </tr>
-              {open === i && (
-                <tr className="sa-explain">
-                  <td colSpan={7}>
-                    <div>
-                      Taxed at {TAXED_AS_LABEL[r.taxed_as]};{' '}
-                      {r.uses_dividend_allowance
-                        ? 'uses the dividend allowance'
-                        : 'does not use the dividend allowance'}
-                      .{' '}
-                      {r.treaty_relief_gbp > 0 &&
-                        `${gbp(r.treaty_relief_gbp)} is creditable as Foreign Tax Credit Relief. `}
-                      {r.why}
-                    </div>
+      <div className="table-scroll">
+        <table className="sa-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ticker</th>
+              <th>Classified as</th>
+              <th className="num">Gross</th>
+              <th className="num">FX rate</th>
+              <th className="num">GBP</th>
+              <th className="num">Withheld</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <Fragment key={i}>
+                <tr className="sa-row" onClick={() => setOpen(open === i ? null : i)}>
+                  <td>{shortDate(r.date)}</td>
+                  <td>{r.symbol ?? r.source ?? '—'}</td>
+                  <td>{KIND_LABEL[r.kind]}</td>
+                  <td className="num">
+                    {r.gross ? `${num(r.gross)} ${r.currency ?? ''}`.trim() : (r.currency ?? '—')}
                   </td>
+                  <td className="num">{r.fx_rate ? num(r.fx_rate, 4) : '—'}</td>
+                  <td className="num">
+                    <b>{gbp(r.gross_gbp)}</b>
+                  </td>
+                  <td className="num">{r.withheld_gbp > 0 ? gbp(r.withheld_gbp) : '—'}</td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
-        </tbody>
-      </table>
+                {open === i && (
+                  <tr className="sa-explain">
+                    <td colSpan={7}>
+                      <div>
+                        Taxed at {TAXED_AS_LABEL[r.taxed_as]};{' '}
+                        {r.uses_dividend_allowance
+                          ? 'uses the dividend allowance'
+                          : 'does not use the dividend allowance'}
+                        .{' '}
+                        {r.treaty_relief_gbp > 0 &&
+                          `${gbp(r.treaty_relief_gbp)} is creditable as Foreign Tax Credit Relief. `}
+                        {r.why}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Section>
   )
 }
@@ -1011,27 +1027,29 @@ function DisposalsTable({ disposals }: { disposals: DisposalEvent[] }) {
   const [open, setOpen] = useState<number | null>(null)
   if (disposals.length === 0) return <p className="muted">No disposals this year.</p>
   return (
-    <table className="sa-table">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Symbol</th>
-          <th className="num">Proceeds</th>
-          <th className="num">Gain / loss</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {disposals.map((d, i) => (
-          <DisposalRow
-            key={i}
-            d={d}
-            open={open === i}
-            toggle={() => setOpen(open === i ? null : i)}
-          />
-        ))}
-      </tbody>
-    </table>
+    <div className="table-scroll">
+      <table className="sa-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Symbol</th>
+            <th className="num">Proceeds</th>
+            <th className="num">Gain / loss</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {disposals.map((d, i) => (
+            <DisposalRow
+              key={i}
+              d={d}
+              open={open === i}
+              toggle={() => setOpen(open === i ? null : i)}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

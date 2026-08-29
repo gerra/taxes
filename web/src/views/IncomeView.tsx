@@ -233,9 +233,17 @@ function InfoLabel({ label, where }: { label: string; where: string }) {
   return (
     <span className="label-text">
       {label}
-      <i className="info-icon tip-wrap" data-tip={where} aria-label="Where to find this">
+      {/* A button, not an <i>: on a touch screen there is no hover, so the
+          only way to the tooltip is a tap — and that needs a real control. */}
+      <button
+        type="button"
+        className="info-icon tip-wrap"
+        data-tip={where}
+        aria-label={`Where to find this: ${where}`}
+        onClick={(e) => e.preventDefault()}
+      >
         i
-      </i>
+      </button>
     </span>
   )
 }
@@ -348,8 +356,9 @@ export default function IncomeView({
       />
 
       <p className="muted small">
-        All figures for this tax year (6 Apr – 5 Apr). Hover the <i className="info-icon">i</i> on
-        any field to see which document it comes from. Nothing is computed until you save.
+        All figures for this tax year (6 Apr – 5 Apr). Tap or hover the{' '}
+        <i className="info-icon">i</i> on any field to see which document it comes from. Nothing is
+        computed until you save.
       </p>
 
       {groups.map((group, i) => (

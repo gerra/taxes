@@ -492,7 +492,14 @@ h3,
   align-items: center;
 }
 
-.topbar-right .link.active {
+.topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-right .link.active,
+.topbar-account .link.active {
   color: var(--ink);
   font-weight: 700;
 }
@@ -674,6 +681,10 @@ h3,
 @media (max-width: 720px) {
   .rail-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rail-steps li:nth-child(odd)::before {
+    content: none;
   }
 }
 
@@ -1129,7 +1140,7 @@ button.link.danger {
 
 .cards-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
   gap: 14px;
   margin: 16px 0;
 }
@@ -1163,6 +1174,20 @@ button.link.danger {
 }
 
 /* ── Tables ────────────────────────────────────────────────────────────── */
+
+/* A table wider than the page scrolls inside its own box rather than pushing
+   the page sideways — a seven-column year-by-year table does that on a tablet,
+   not just a phone, so this is not scoped to a breakpoint. The padding is room
+   for the card shadow the scroll box would otherwise clip; the negative margin
+   gives it back, so nothing below moves. */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 16px;
+  margin-bottom: -16px;
+}
 
 .sa-table {
   width: 100%;
@@ -1200,6 +1225,7 @@ button.link.danger {
 .sa-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .sa-row {
@@ -1241,7 +1267,7 @@ button.link.danger {
 .mapping-grid,
 .planner-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
   gap: 12px 18px;
 }
 
@@ -1555,7 +1581,19 @@ select:focus {
   cursor: help;
 }
 
-.tip-wrap:hover::after {
+.tip-wrap:focus {
+  outline: none;
+}
+
+.tip-wrap:focus-visible {
+  outline: 2px solid var(--coral);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.tip-wrap:hover::after,
+.tip-wrap:focus::after,
+.tip-wrap[data-tip-open]::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 9px);
@@ -1576,7 +1614,9 @@ select:focus {
   pointer-events: none;
 }
 
-.tip-wrap:hover::before {
+.tip-wrap:hover::before,
+.tip-wrap:focus::before,
+.tip-wrap[data-tip-open]::before {
   content: '';
   position: absolute;
   bottom: calc(100% + 3px);
@@ -2269,6 +2309,10 @@ select:focus {
 }
 
 .info-icon {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2285,19 +2329,24 @@ select:focus {
   flex: 0 0 auto;
 }
 
-.info-icon:hover {
+.info-icon:hover,
+.info-icon:focus {
   background: var(--info-soft);
   color: var(--info);
 }
 
-.planner-grid .tip-wrap:hover::after {
+.planner-grid .tip-wrap:hover::after,
+.planner-grid .tip-wrap:focus::after,
+.planner-grid .tip-wrap[data-tip-open]::after {
   bottom: auto;
   top: calc(100% + 8px);
   left: -8px;
   max-width: 320px;
 }
 
-.planner-grid .tip-wrap:hover::before {
+.planner-grid .tip-wrap:hover::before,
+.planner-grid .tip-wrap:focus::before,
+.planner-grid .tip-wrap[data-tip-open]::before {
   bottom: auto;
   top: calc(100% + 2px);
   left: 2px;
@@ -2535,7 +2584,7 @@ select:focus {
 
 .year-params {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 18px;
   align-items: start;
 }
@@ -2552,4 +2601,445 @@ select:focus {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
+}
+
+/* ── Narrow screens ────────────────────────────────────────────────────────
+
+   The same app on a phone, not a cut-down one: every figure a laptop shows is
+   still here. What changes is the shape. Rows that were laid out side by side
+   stack, the four-step rail folds to two columns and clamps its headlines, and
+   the wide tables get a scroll box rather than squashing a money column onto
+   two lines — a figure that wraps mid-number is worse than one you scroll to.
+
+   Tooltips become a bottom sheet. On a phone there is no room beside a 16px
+   info marker for a 300px card, and no hover to open it with either, so the
+   tip is pinned to the bottom of the screen and opened by tapping. */
+
+@media (max-width: 700px) {
+  .app {
+    padding: 0 16px calc(40px + env(safe-area-inset-bottom));
+  }
+
+  .center-page {
+    min-height: 100dvh;
+  }
+
+  /* Brand and account on one row; the year picker gets a line of its own,
+     because it is the control that is actually used. */
+  .topbar {
+    gap: 10px 14px;
+    padding: 14px 0 4px;
+    margin-bottom: 18px;
+  }
+
+  .topbar h1 {
+    font-size: 19px;
+  }
+
+  .topbar-account {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .topbar-right {
+    order: 2;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .topbar-right select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Step rail */
+  .rail {
+    gap: 8px;
+    margin-bottom: 22px;
+  }
+
+  .rail-steps {
+    flex: 1 1 100%;
+    gap: 6px;
+  }
+
+  .rail-step {
+    padding: 9px 11px;
+    gap: 8px;
+    border-radius: 12px;
+  }
+
+  .rail-mark {
+    width: 19px;
+    height: 19px;
+    font-size: 11px;
+  }
+
+  .rail-title {
+    font-size: 13px;
+  }
+
+  /* Two lines of headline is enough to say what state a step is in; more and
+     the rail is taller than the page it introduces. */
+  .rail-headline {
+    font-size: 11.5px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .rail-steps li + li::before {
+    top: 22px;
+  }
+
+  .rail-aside {
+    flex: 1 1 100%;
+    align-self: auto;
+    padding: 9px 12px;
+    text-align: left;
+  }
+
+  /* Type & boxes */
+  h2 {
+    font-size: 19px;
+  }
+
+  h3 {
+    font-size: 15.5px;
+    margin: 22px 0 8px;
+  }
+
+  .step-head {
+    margin-bottom: 14px;
+  }
+
+  .page-head {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .section {
+    margin-top: 22px;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .banner {
+    padding: 11px 14px;
+    border-radius: 14px;
+  }
+
+  .notice {
+    padding: 12px 14px;
+    gap: 11px;
+    border-radius: 14px;
+  }
+
+  .step-callout {
+    padding: 10px 13px;
+  }
+
+  .step-next {
+    padding: 14px 16px;
+    gap: 12px;
+    border-radius: 16px;
+  }
+
+  .disclaimer {
+    margin-top: 34px;
+  }
+
+  /* Tables scroll sideways instead of squashing. */
+  .sa-table {
+    font-size: 13.5px;
+  }
+
+  .sa-table th {
+    padding: 8px 10px;
+    font-size: 11.5px;
+  }
+
+  .sa-table td {
+    padding: 8px 10px;
+  }
+
+  .balance-ledger th,
+  .balance-ledger td {
+    padding-right: 10px;
+  }
+
+  /* The right-aligned columns drop their right padding, so the gutter has to
+     come from the left or two negative figures run into each other. */
+  .balance-ledger th + th,
+  .balance-ledger td + td {
+    padding-left: 12px;
+  }
+
+  /* Who / message / when / actions has a width below which it stops being
+     readable at all — past that, scroll rather than squash it further. An
+     address is the one cell allowed to break mid-word: left whole it takes the
+     column budget the other three need. */
+  .admin-table {
+    min-width: 520px;
+  }
+
+  .admin-email {
+    overflow-wrap: anywhere;
+  }
+
+  /* The document list is five columns of very different weights, so on a phone
+     it stops being a table: filename on its own line, its facts underneath. */
+  .doc-table,
+  .doc-table tbody,
+  .doc-table td {
+    display: block;
+  }
+
+  .doc-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .doc-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .doc-table td:first-child {
+    flex: 1 1 100%;
+    font-weight: 600;
+    word-break: break-word;
+  }
+
+  .doc-table td:empty {
+    display: none;
+  }
+
+  .doc-table td:last-child {
+    margin-left: auto;
+  }
+
+  /* Controls. 16px is the threshold below which iOS zooms the page on focus,
+     and the extra padding is what makes a row a thumb-sized target. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea,
+  .access-note input,
+  .access-note textarea,
+  .resolve-form textarea {
+    font-size: 16px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']) {
+    padding: 10px 12px;
+  }
+
+  select {
+    padding: 10px 36px 10px 12px;
+  }
+
+  .actual-input {
+    width: 104px;
+    padding: 7px 9px;
+  }
+
+  .btn {
+    padding: 11px 20px;
+  }
+
+  .btn.small {
+    padding: 7px 14px;
+    font-size: 13.5px;
+  }
+
+  .btn.big {
+    padding: 13px 24px;
+  }
+
+  .seg button {
+    padding: 7px 13px;
+    font-size: 13px;
+  }
+
+  /* Vertical hit area for the inline action links, without moving them. */
+  .gap-actions button.link,
+  .notice-actions button.link,
+  .doc-table button.link,
+  .admin-actions button.link,
+  .section-actions button.link {
+    padding: 4px 0;
+  }
+
+  .save-bar {
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    padding: 11px 14px;
+    gap: 10px;
+    border-radius: 14px;
+  }
+
+  .save-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  /* The bill */
+  .total-card {
+    padding: 18px 18px 20px;
+    gap: 12px 18px;
+    border-radius: 18px;
+  }
+
+  .total-card .stat-value {
+    font-size: 30px;
+  }
+
+  .total-card .total-breakdown {
+    flex-basis: 100%;
+    margin-left: 0;
+    gap: 12px 20px;
+  }
+
+  .total-card .of-which {
+    padding: 12px 14px 14px;
+  }
+
+  .bill-strip {
+    padding: 16px;
+    gap: 12px;
+    border-radius: 16px;
+  }
+
+  .bill-strip .stat-value {
+    font-size: 26px;
+  }
+
+  .bill-strip-note {
+    max-width: none;
+    text-align: left;
+  }
+
+  .bill-headline {
+    gap: 12px;
+  }
+
+  .bill-subtotal {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  /* Admin */
+  .admin-actions {
+    white-space: normal;
+    text-align: left;
+  }
+
+  .admin-actions > * + * {
+    margin-left: 10px;
+  }
+
+  .admin-note {
+    max-width: none;
+  }
+
+  .admin-add {
+    flex-wrap: wrap;
+  }
+
+  .admin-add input {
+    flex: 1 1 200px;
+    max-width: none;
+  }
+
+  /* Modal: anchored near the top so an open keyboard cannot push it off. */
+  .modal-backdrop {
+    align-items: flex-start;
+    padding: 8vh 12px 24px;
+    overflow-y: auto;
+  }
+
+  .modal {
+    width: min(440px, 100%);
+    padding: 20px 20px 18px;
+    border-radius: 18px;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  /* Tooltips as a bottom sheet: the one place a full tip always fits, and it
+     cannot be clipped by the edge of the screen whatever it is anchored to. */
+  .tip-wrap:hover::after,
+  .tip-wrap:focus::after,
+  .tip-wrap[data-tip-open]::after,
+  .planner-grid .tip-wrap:hover::after,
+  .planner-grid .tip-wrap:focus::after,
+  .planner-grid .tip-wrap[data-tip-open]::after {
+    position: fixed;
+    inset: auto 12px calc(12px + env(safe-area-inset-bottom)) 12px;
+    width: auto;
+    max-width: none;
+    z-index: 60;
+    padding: 13px 16px;
+    font-size: 13.5px;
+  }
+
+  .tip-wrap:hover::before,
+  .tip-wrap:focus::before,
+  .tip-wrap[data-tip-open]::before {
+    display: none;
+  }
+
+  .info-icon {
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 430px) {
+  .app {
+    padding: 0 12px calc(32px + env(safe-area-inset-bottom));
+  }
+
+  .landing {
+    padding: 0 14px 44px;
+  }
+
+  .topbar h1 {
+    font-size: 18px;
+  }
+
+  .cards-row {
+    gap: 10px;
+  }
+
+  .stat-value {
+    font-size: 23px;
+  }
+
+  .total-card .stat-value {
+    font-size: 27px;
+  }
+
+  .sa-table th,
+  .sa-table td {
+    padding: 7px 8px;
+  }
+
+  .stat-card {
+    padding: 15px 16px;
+  }
 }
