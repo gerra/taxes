@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import StepRail from './components/StepRail'
 import { useAuth } from './hooks/useAuth'
+import type { Page } from './hooks/useRoute'
+import type { Route } from './hooks/useRoute'
+import { readRoute, useRoute } from './hooks/useRoute'
 import { useTipTaps } from './hooks/useTipTaps'
 import type { StepKey, YearStatus } from './types'
 import { currentTaxYear, lastElapsedTaxYear, shortDate, taxYearLabel } from './utils/format'
@@ -12,8 +15,6 @@ import IncomeView from './views/IncomeView'
 import LoginView from './views/LoginView'
 import PlanView from './views/PlanView'
 import ReportView from './views/ReportView'
-
-type Page = StepKey | 'history' | 'admin'
 
 // The year the app opens on is the last finished one — that's the one you file.
 // The running year is offered too: it's the only one you can still change.
@@ -33,15 +34,21 @@ const PAGE_NAMES: Record<Page, string> = {
 export default function App() {
   const { user, loading, logout } = useAuth()
   useTipTaps()
-  const [page, setPage] = useState<Page>('documents')
+  // A link can name the step and the year (?year=2024&step=report). Read once,
+  // for the state the app starts in; from there the URL follows the state.
+  const opened = useRef(readRoute()).current
+  const [page, setPage] = useState<Page>(opened.page ?? 'documents')
   // The landing step is chosen once, from the first status that arrives: the
   // app opens where the work actually is rather than always at step one. Only
   // once — after that the user is navigating, and moving them would be rude.
-  const landed = useRef(false)
+  // A link that already named a step has landed by definition. It is also what
+  // holds the URL back until the landing step is known, so the address the app
+  // settles on replaces the blank one instead of stacking behind it.
+  const [landed, setLanded] = useState(opened.page !== null)
   // Admin isn't a step, so it hides the rail — which leaves the link that
   // opened it as the only way back out. Remember where "back" is.
   const beforeAdmin = useRef<Page>('report')
-  const [year, setYear] = useState(LATEST_FILED)
+  const [year, setYear] = useState(opened.year ?? LATEST_FILED)
   // Only years the backend has constants for (core/tax_years.py), newest first;
   // the running year is included, marked so nobody files off it.
   const [years, setYears] = useState<number[]>([LATEST_FILED])
@@ -60,7 +67,11 @@ export default function App() {
       .get<{ years: number[] }>('/api/report/years')
       .then((r) => {
         const usable = r.years.filter((y) => y <= IN_PROGRESS).sort((a, b) => b - a)
-        if (usable.length) setYears(usable)
+        if (!usable.length) return
+        setYears(usable)
+        // A year out of a link that the backend has no constants for would sit
+        // in the picker showing nothing. Fall back to the one you'd file.
+        setYear((y) => (usable.includes(y) ? y : LATEST_FILED))
       })
       .catch(() => {})
   }, [user])
@@ -80,16 +91,37 @@ export default function App() {
   useEffect(reloadStatus, [reloadStatus])
 
   useEffect(() => {
-    if (landed.current || !status) return
-    landed.current = true
+    if (landed || !status) return
+    setLanded(true)
     // Nothing outstanding: open on the Report, which is the thing you came for.
     setPage(status.next?.key ?? 'report')
-  }, [status])
+  }, [landed, status])
+
+  // Every move the user makes, from the rail or from a page's own link. It also
+  // ends the landing: from the first click on, where you are is your choice.
+  const navigate = useCallback((next: Page) => {
+    setLanded(true)
+    setPage(next)
+  }, [])
+
+  // Admin is not a step and not everyone's to open; a link to it from someone
+  // it isn't for reads as the report.
+  useEffect(() => {
+    if (page === 'admin' && user && !user.is_admin) setPage('report')
+  }, [page, user])
+
+  // Once signed in, the URL says where you are — and Back and Forward move you
+  // between the steps you've visited, without a reload.
+  const onPop = useCallback((r: Route) => {
+    setPage(r.page ?? 'documents')
+    if (r.year !== null) setYear(r.year)
+  }, [])
+  useRoute(user && landed ? page : null, year, onPop)
 
   if (loading) return <div className="center-page">Loading…</div>
   if (!user) return <LoginView />
 
-  const goTo = (key: StepKey) => setPage(key)
+  const goTo = (key: StepKey) => navigate(key)
 
   return (
     <div className="app">
@@ -120,7 +152,7 @@ export default function App() {
             (page === 'admin' ? (
               <button
                 className="link"
-                onClick={() => setPage(beforeAdmin.current)}
+                onClick={() => navigate(beforeAdmin.current)}
                 title={`Back to ${PAGE_NAMES[beforeAdmin.current]}`}
               >
                 ← {PAGE_NAMES[beforeAdmin.current]}
@@ -130,7 +162,7 @@ export default function App() {
                 className="link"
                 onClick={() => {
                   beforeAdmin.current = page
-                  setPage('admin')
+                  navigate('admin')
                 }}
                 title="Manage who can sign in"
               >
@@ -148,7 +180,7 @@ export default function App() {
         <StepRail
           status={status}
           active={page === 'history' ? 'history' : page}
-          onSelect={setPage}
+          onSelect={navigate}
           loading={statusLoading}
         />
       )}
