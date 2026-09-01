@@ -22,7 +22,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKER_TIMEOUT = 240  # seconds; below gunicorn's 300s
 
 # Bump when the worker/bundle shape changes so cached runs are recomputed.
-ENGINE_VERSION = 4
+ENGINE_VERSION = 5
 
 RAW_HEADER = ["date", "action", "symbol", "quantity", "price", "fees", "currency"]
 
@@ -217,26 +217,69 @@ def merge_csv_files(
 
 # ── Document sets ──────────────────────────────────────────────────────────────
 
-_PROBES = {
-    "schwab_individual": ("Date", "Action", "Symbol"),
-    "freetrade_gia": ("Title", "Type", "Timestamp"),
+# Brokers whose export chunks merge into one CSV before the parser sees them:
+# account type -> (worker file key, output name, header probes).
+_MERGED_CSV = {
+    "schwab_individual": ("schwab", "schwab.csv", ("Date", "Action", "Symbol")),
+    "freetrade_gia": ("freetrade", "freetrade.csv", ("Title", "Type", "Timestamp")),
+    "interactive_brokers": (
+        "interactive_brokers",
+        "interactive_brokers.csv",
+        ("Date", "Transaction Type", "Net Amount"),
+    ),
 }
 
+# Brokers cgt-calc reads as a directory rather than a file, because one account
+# needs several files that are not all the same format. Filenames are preserved
+# there: Morgan Stanley and Sharesight recognise each report by its name, and HL
+# matches a trade to its contract note by the reference its filename starts with.
+_DIR_BROKERS = {
+    "hl_fund_share": "hl_dir",
+    "morgan_stanley_awards": "mssb_dir",
+    "sharesight": "sharesight_dir",
+    "trading212_invest": "trading212_dir",
+}
 
-def _decrypt_doc(doc: dict, dest_dir: str) -> str:
+# Exports that are one whole-account file and cannot be merged with another —
+# a Vanguard worksheet holds two differently-shaped tables, so concatenating two
+# of them produces a file no parser can read. Newest upload wins.
+_SINGLE_FILE = {"vanguard_gia": "vanguard"}
+
+
+def _decrypt_doc_to(doc: dict, dest: str) -> str:
     src = paths.doc_path(doc["account_id"], doc["id"])
     with open(src, "rb") as f:
         data = crypto.decrypt(f.read())
-    dest = os.path.join(dest_dir, f"{doc['id']}_{os.path.basename(doc['filename'])}")
     with open(dest, "wb") as f:
         f.write(data)
     return dest
 
 
-def build_document_set(user_id: int, work_dir: str) -> tuple[dict, list[str]]:
-    """Decrypt + merge every account's documents into per-flag input files.
+def _decrypt_doc(doc: dict, dest_dir: str) -> str:
+    return _decrypt_doc_to(
+        doc, os.path.join(dest_dir, f"{doc['id']}_{os.path.basename(doc['filename'])}")
+    )
 
-    Returns ({file_key: path}, warnings)."""
+
+def _newest_first_by_name(entries: list[tuple[dict, dict]]) -> tuple[list[dict], list[str]]:
+    """One document per filename, the newest upload winning, plus the filenames
+    it displaced. Names carry meaning in a broker directory, so two documents
+    cannot both be called `Releases Report.csv`."""
+    chosen: dict[str, dict] = {}
+    displaced: list[str] = []
+    for _account, doc in sorted(entries, key=lambda e: e[1]["id"]):
+        name = os.path.basename(doc["filename"])
+        if name.lower() in chosen:
+            displaced.append(name)
+        chosen[name.lower()] = doc
+    return list(chosen.values()), sorted(set(displaced))
+
+
+def build_document_set(user_id: int, work_dir: str) -> tuple[dict, list[str]]:
+    """Decrypt every account's documents into what its parser expects: one merged
+    CSV, a directory of reports under their own filenames, or a single file.
+
+    Returns ({file_key: path}, warnings) — the keys are engine.worker.FILE_FLAGS."""
     src_dir = os.path.join(work_dir, "src")
     os.makedirs(src_dir, exist_ok=True)
     files: dict[str, str] = {}
@@ -248,16 +291,43 @@ def build_document_set(user_id: int, work_dir: str) -> tuple[dict, list[str]]:
         for doc in repo.list_documents(user_id, account["id"]):
             by_type.setdefault(account["type"], []).append((account, doc))
 
-    for type_, probe_key, out_name, pair in (
-        ("schwab_individual", "schwab", "schwab.csv", False),
-        ("freetrade_gia", "freetrade", "freetrade.csv", False),
-    ):
+    for type_, (file_key, out_name, probes) in _MERGED_CSV.items():
         entries = by_type.get(type_, [])
         if entries:
             paths_ = [_decrypt_doc(doc, src_dir) for _, doc in entries]
             out = os.path.join(work_dir, out_name)
-            merge_csv_files(paths_, out, _PROBES[type_], pair_rows=pair)
-            files[probe_key] = out
+            merge_csv_files(paths_, out, probes)
+            files[file_key] = out
+
+    for type_, file_key in _DIR_BROKERS.items():
+        entries = by_type.get(type_, [])
+        if not entries:
+            continue
+        out_dir = os.path.join(work_dir, file_key)
+        os.makedirs(out_dir, exist_ok=True)
+        docs, displaced = _newest_first_by_name(entries)
+        for doc in docs:
+            _decrypt_doc_to(doc, os.path.join(out_dir, os.path.basename(doc["filename"])))
+        if displaced:
+            warnings.append(
+                f"{entries[0][0]['name']}: {', '.join(displaced)} uploaded more than once "
+                "— only the newest of each name is used, because this broker's reports are "
+                "told apart by their filenames."
+            )
+        files[file_key] = out_dir
+
+    for type_, file_key in _SINGLE_FILE.items():
+        entries = by_type.get(type_, [])
+        if not entries:
+            continue
+        docs = sorted((doc for _, doc in entries), key=lambda d: d["id"])
+        if len(docs) > 1:
+            warnings.append(
+                f"{entries[0][0]['name']}: {len(docs)} files uploaded; using the newest "
+                f"({docs[-1]['filename']}). This export is one whole-account worksheet, "
+                "so exports cannot be stitched together — re-export the full history."
+            )
+        files[file_key] = _decrypt_doc(docs[-1], src_dir)
 
     awards = by_type.get("schwab_awards", [])
     if awards:
@@ -327,7 +397,12 @@ def input_material(user_id: int, tax_year: int, balance_check: bool = True) -> d
         # It is a run option, not an input: core.status ignores it when asking
         # whether the documents have moved.
         "balance_check": balance_check,
-        "docs": sorted([d["account_id"], d["sha256"]] for d in repo.list_documents(user_id)),
+        # The filename is part of the input, not just a label: the directory
+        # parsers pick a report's format by its name and match HL contract notes
+        # by it, so the same bytes under another name are a different run.
+        "docs": sorted(
+            [d["account_id"], d["sha256"], d["filename"]] for d in repo.list_documents(user_id)
+        ),
         "spin_offs": sorted([r["dst"], r["src"]] for r in repo.list_spin_offs(user_id)),
         "exempt": sorted(r["name"] for r in repo.list_exempt_securities(user_id)),
         "interest_funds": sorted(estimator.KNOWN_INTEREST_FUNDS),
@@ -358,7 +433,18 @@ def validate_upload(account: dict, file_path: str) -> dict:
     os.makedirs(work_dir, exist_ok=True)
     try:
         target = file_path
-        if account["type"] == "bank_generic":
+        if account["type"] in _DIR_BROKERS:
+            # These parsers read a file in the context of its siblings — an HL
+            # Transaction Summary takes each trade's ticker, quantity and price
+            # from the contract note beside it — so validate the upload amongst
+            # the documents the account already holds, under its own filename.
+            sibling_dir = os.path.join(work_dir, "dir")
+            os.makedirs(sibling_dir, exist_ok=True)
+            for doc in repo.list_documents(account["user_id"], account["id"]):
+                _decrypt_doc_to(doc, os.path.join(sibling_dir, os.path.basename(doc["filename"])))
+            target = os.path.join(sibling_dir, os.path.basename(file_path))
+            shutil.copyfile(file_path, target)
+        elif account["type"] == "bank_generic":
             mapping = repo.get_column_mapping(account["id"])
             if not mapping:
                 return {"ok": False, "needs_mapping": True, **csv_preview(file_path)}

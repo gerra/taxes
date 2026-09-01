@@ -27,6 +27,43 @@ INSTRUCTIONS = {
         "right) → export CSV. The app exports from 2020; the website only covers the "
         "last 12 months."
     ),
+    "hl_fund_share": (
+        "hl.co.uk → Accounts → Tax Centre → generate a Transaction Summary → download "
+        "its CSV. Then, for every buy and sell line in it, download the PDF contract "
+        "note (Transaction History → the trade) and upload that here too: HL's CSV has "
+        "no ticker, quantity or unit price, so each trade takes them from its note. "
+        "Keep each note's filename starting with the trade reference, e.g. "
+        "B302087054_BOUGHT.pdf. Fund & Share Account only — never an ISA, LISA or SIPP."
+    ),
+    "interactive_brokers": (
+        "Client Portal → Performance & Reports → Transaction History → period Custom, "
+        "from the account's first transaction to today → clear every type/symbol filter "
+        "→ download CSV. Not an Activity Statement or Flex Query — their layout differs. "
+        "The account's base currency must be GBP."
+    ),
+    "morgan_stanley_awards": (
+        "Morgan Stanley at Work (formerly StockPlan Connect) → download the full report "
+        "set and upload 'Releases Report.csv' and 'Withdrawals Report.csv' under exactly "
+        "those names. Built for Alphabet GSU Class C awards; other employers and plans "
+        "are untested."
+    ),
+    "sharesight": (
+        "Sharesight → Tax → All Trades Report (since inception, 'Do not group'), and the "
+        "Taxable Income Report for the tax year. Export each to a spreadsheet, save the "
+        "sheet as CSV, and upload them as 'All Trades Report.csv' and 'Taxable Income "
+        "Report.csv'. The portfolio's base currency must be GBP."
+    ),
+    "trading212_invest": (
+        "Trading 212 → Menu → History → export → pick the date range, tick every data "
+        "category → download CSV. Several exports covering consecutive ranges are fine; "
+        "overlaps are deduplicated by transaction ID. Invest account only, never the ISA."
+    ),
+    "vanguard_gia": (
+        "vanguardinvestor.co.uk → Documents → Report Generator → Client Transactions "
+        "Listing for the whole history → save the General Account worksheet as a "
+        "comma-separated CSV, keeping both the Cash Transactions and Investment "
+        "Transactions tables. One file per account: the newest upload is used."
+    ),
     "bank_generic": (
         "Download a statement CSV covering the tax year. Only interest rows are "
         "used — set up the column mapping once and re-use it."
@@ -43,6 +80,19 @@ _TAX_YEAR_ONLY_TYPES = {"bank_generic"}
 # Validation warnings on Individual docs that are explained by (and go away with)
 # an Equity Awards document.
 _AWARDS_WARNING_MARKERS = ("stock-plan", "no schwab award file")
+
+# A Hargreaves Lansdown trade takes its ticker, quantity, unit price and dealing
+# charge from a PDF contract note, which is a separate upload to the same
+# account. A Transaction Summary validated before its notes arrive is warned
+# about, listing the trade references it could not resolve, in exactly this
+# shape (engine.worker writes it) so that the references whose note has since
+# been uploaded can be dropped from the warning here.
+HL_MISSING_NOTES_PREFIX = "No contract note uploaded for "
+HL_MISSING_NOTES_SUFFIX = (
+    " — an HL trade takes its ticker, quantity, unit price and dealing charge from the "
+    "PDF note. Upload each one to this account, keeping the trade reference at the "
+    "start of its filename; this warning clears once they are all here."
+)
 
 
 def _merge_ranges(ranges: list[tuple[date, date]]) -> list[tuple[date, date]]:
@@ -129,6 +179,38 @@ def account_coverage(
     }
 
 
+def _has_contract_note(reference: str, filenames: list[str]) -> bool:
+    """Whether one of the account's documents is `<reference>_*.pdf`, the naming
+    the parser matches contract notes by (case-insensitively)."""
+    start = f"{reference.lower()}_"
+    return any(n.lower().startswith(start) and n.lower().endswith(".pdf") for n in filenames)
+
+
+def refresh_hl_warnings(docs: list[dict]) -> None:
+    """Rewrite each document's missing-contract-note warning against the notes
+    the account holds now. The warning is written when the Transaction Summary
+    is validated, and the notes are normally uploaded after it, so without this
+    it would name references that are no longer missing — and never clear."""
+    filenames = [d["filename"] for d in docs]
+    for doc in docs:
+        refreshed = []
+        for warning in doc["warnings"]:
+            if not warning.startswith(HL_MISSING_NOTES_PREFIX):
+                refreshed.append(warning)
+                continue
+            listed = warning[len(HL_MISSING_NOTES_PREFIX) :].split(" — ")[0]
+            missing = [
+                ref
+                for ref in (part.strip() for part in listed.split(","))
+                if ref and not _has_contract_note(ref, filenames)
+            ]
+            if missing:
+                refreshed.append(
+                    HL_MISSING_NOTES_PREFIX + ", ".join(missing) + HL_MISSING_NOTES_SUFFIX
+                )
+        doc["warnings"] = refreshed
+
+
 def _awards_related(warning: str) -> bool:
     lowered = warning.lower()
     return any(marker in lowered for marker in _AWARDS_WARNING_MARKERS)
@@ -145,6 +227,10 @@ def checklist(user_id: int, tax_year: int) -> dict:
         )
         for a in accounts
     ]
+
+    for item in items:
+        if item["account"]["type"] == "hl_fund_share":
+            refresh_hl_warnings(item["documents"])
 
     # Cross-account dependency: Schwab Individual vest rows need the Equity Awards export.
     has_awards_docs = any(i["account"]["type"] == "schwab_awards" and i["documents"] for i in items)
