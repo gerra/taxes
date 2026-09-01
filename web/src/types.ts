@@ -45,8 +45,19 @@ export interface AccessLists {
   pending_limit?: number
 }
 
+// Mirrors core.repo.ACCOUNT_TYPES.
 export type AccountType =
-  'schwab_individual' | 'schwab_awards' | 'freetrade_gia' | 'bank_generic' | 'raw_csv'
+  | 'schwab_individual'
+  | 'schwab_awards'
+  | 'freetrade_gia'
+  | 'hl_fund_share'
+  | 'interactive_brokers'
+  | 'morgan_stanley_awards'
+  | 'sharesight'
+  | 'trading212_invest'
+  | 'vanguard_gia'
+  | 'bank_generic'
+  | 'raw_csv'
 
 export interface Account {
   id: number

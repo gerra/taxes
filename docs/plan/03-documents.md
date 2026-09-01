@@ -7,9 +7,11 @@ upload instantly, and shows what's still missing.
 ## Interface
 
 **Provides**
-- Account registry: `GET/POST /api/accounts` — types:
-  `schwab_individual`, `schwab_awards` (CSV or JSON), `freetrade_gia`,
-  `bank_generic` (Revolut, HSBC — interest via mapped CSV), `raw_csv` (escape hatch).
+- Account registry: `GET/POST /api/accounts` — one type per broker cgt-calc parses
+  (`core.repo.ACCOUNT_TYPES`): `schwab_individual`, `schwab_awards` (CSV or JSON),
+  `freetrade_gia`, `hl_fund_share`, `interactive_brokers`, `morgan_stanley_awards`,
+  `sharesight`, `trading212_invest`, `vanguard_gia`, plus `bank_generic`
+  (Revolut, HSBC — interest via mapped CSV) and `raw_csv` (escape hatch).
   Each account stores display name + first-activity date (drives coverage-needed range).
 - Uploads: `POST /api/documents` (multipart) → parse-validated via module 2's
   `validate_document` before being accepted; response includes transaction count,
@@ -53,12 +55,31 @@ upload instantly, and shows what's still missing.
      the website only covers the last 12 months.
    - **Revolut / HSBC**: statement CSV export; only interest matters for the return —
      see column mapper below.
-5. **Bank column mapper**: Revolut/HSBC CSVs aren't cgt-calc formats. A small UI maps
+   - **Hargreaves Lansdown**: Tax Centre → Transaction Summary CSV, *plus* the PDF
+     contract note behind every buy and sell (the CSV has no ticker, quantity or unit
+     price). Notes are matched to trades by filename prefix, so they upload to the same
+     account and keep their `<reference>_*.pdf` names.
+   - **Interactive Brokers**: Client Portal → Transaction History → Custom period →
+     CSV. GBP base currency only; not an Activity Statement or Flex Query.
+   - **Morgan Stanley at Work / Sharesight**: report sets whose filenames are what
+     identifies each report (`Releases Report.csv`, `All Trades Report*.csv`, …), so
+     uploads keep their names and reach the parser as a directory.
+   - **Trading 212**: History → export, one CSV per date range; overlaps are
+     deduplicated by the export's own transaction IDs.
+   - **Vanguard**: Report Generator → Client Transactions Listing, saved as CSV. One
+     worksheet holds two differently-shaped tables, so exports cannot be stitched
+     together — the newest upload is the one used.
+5. **How a document set reaches the engine** — three shapes, in `engine.runner`:
+   merged CSV (Schwab, Freetrade, IBKR: chunks concatenated, duplicate rows dropped),
+   directory (HL, Morgan Stanley, Sharesight, Trading 212: originals written out under
+   their own filenames, newest wins on a repeat), and single file (Vanguard). The
+   filename is therefore part of a run's inputs, not just a label.
+6. **Bank column mapper**: Revolut/HSBC CSVs aren't cgt-calc formats. A small UI maps
    their columns → the fork's `raw` format (`date,action,symbol,quantity,price,fees,currency`),
    with an interest-row filter (e.g. "description contains 'interest'"). Mapping saved
    per account (`column_mappings`) so future uploads auto-convert. (This also covers
    any future broker with no parser.)
-6. **Checklist UI**: one page per tax year — accounts as cards, green/amber/red
+7. **Checklist UI**: one page per tax year — accounts as cards, green/amber/red
    coverage bar, gap list with instructions, drag-and-drop upload zone per account,
    instant validation feedback, and "extra inputs needed" section (spin-offs the
    engine flagged, etc.).

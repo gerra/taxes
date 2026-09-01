@@ -9,7 +9,8 @@ all of that harmless.
 Job JSON:
   {"mode": "validate", "account_type": ..., "file": path}
   {"mode": "calculate", "tax_year": int, "files": {schwab|schwab_award|
-   schwab_equity_award_json|freetrade|raw: path}, "spin_offs": {dst: src},
+   schwab_equity_award_json|freetrade|hl_dir|interactive_brokers|mssb_dir|
+   sharesight_dir|trading212_dir|vanguard|raw: path}, "spin_offs": {dst: src},
    "exchange_rates_file": path, "isin_translation_file": path,
    "work_dir": path, "pdf_path": path|null, "balance_check": bool,
    "exempt_securities": [ticker|ISIN, ...], "interest_fund_tickers": [ticker, ...]}
@@ -24,7 +25,7 @@ import logging
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -76,11 +77,109 @@ def _tx_stats(transactions) -> dict:
     }
 
 
+# The HL parser refuses a buy/sell whose contract note is not in the same
+# directory. On upload the note is often not there yet (it is a separate file),
+# so validation collects the references instead of failing — see
+# core.coverage.HL_MISSING_NOTES_PREFIX, which clears them again once the notes
+# arrive.
+_HL_NO_NOTE = re.compile(r"Cannot find contract note pdf for transaction (\S+)")
+
+# Reports Morgan Stanley and Sharesight recognise only by filename. Uploading
+# anything else silently contributes nothing, so say so at upload time.
+_REQUIRED_FILENAMES = {
+    "morgan_stanley_awards": ("Releases Report.csv", "Withdrawals Report.csv"),
+    "sharesight": ("All Trades Report*.csv", "Taxable Income Report*.csv"),
+}
+
+
+def _validate_hl(path: Path, warnings: list[str]) -> dict:
+    """Parse one HL upload: a Transaction Summary CSV, or a contract-note PDF
+    (which carries no transactions of its own — it prices a CSV row)."""
+    from cgt_calc.exceptions import ParsingError
+    from cgt_calc.model import BrokerTransaction, CurrencyCode
+    from cgt_calc.parsers.hl import HargreavesLansdownParser
+
+    from core.coverage import HL_MISSING_NOTES_PREFIX, HL_MISSING_NOTES_SUFFIX
+
+    if path.suffix.lower() == ".pdf":
+        pdf = HargreavesLansdownParser._parse_pdf(path)  # noqa: SLF001
+        reference = path.name.split("_", 1)[0]
+        if "_" not in path.name or not reference[1:].isdigit():
+            warnings.append(
+                f"'{path.name}' does not start with a trade reference, so no trade will "
+                "ever match it. Rename a copy to '<reference>_note.pdf' (the reference "
+                "is the CSV's Reference column, e.g. B302087054) and upload that."
+            )
+        if pdf.date is None:
+            warnings.append(
+                "No trade date could be read from this contract note; check it is the "
+                "original text PDF from HL rather than a scan or a print-out."
+            )
+        day = pdf.date.isoformat() if pdf.date else None
+        return {"tx_count": 0, "date_min": day, "date_max": day}
+
+    missing: list[str] = []
+    original = HargreavesLansdownParser.read_row.__func__
+
+    def tolerant_read_row(cls, row, file_path):
+        try:
+            return original(cls, row, file_path)
+        except ParsingError as e:
+            match = _HL_NO_NOTE.search(str(e))
+            if not match:
+                raise
+            missing.append(match.group(1))
+            # Keep the row: its date is real coverage, and the trade is only
+            # unpriced until its note is uploaded.
+            return BrokerTransaction(
+                date=datetime.strptime(row["Trade date"], "%d/%m/%Y").date(),
+                action=cls._determine_action_type(row["Reference"]),  # noqa: SLF001
+                symbol=None,
+                description=row.get("Description", ""),
+                quantity=None,
+                price=None,
+                fees=Decimal(0),
+                amount=None,
+                currency=CurrencyCode("GBP"),
+                broker=cls.pretty_name,
+            )
+
+    HargreavesLansdownParser.read_row = classmethod(tolerant_read_row)
+    try:
+        transactions = HargreavesLansdownParser.load_from_file(path)
+    finally:
+        HargreavesLansdownParser.read_row = classmethod(original)
+    if missing:
+        warnings.append(
+            HL_MISSING_NOTES_PREFIX + ", ".join(dict.fromkeys(missing)) + HL_MISSING_NOTES_SUFFIX
+        )
+    return _tx_stats(transactions)
+
+
+def _check_required_filename(account_type: str, path: Path) -> None:
+    """Reject a report whose filename the parser will not recognise."""
+    patterns = _REQUIRED_FILENAMES.get(account_type)
+    if not patterns or any(path.match(pattern, case_sensitive=False) for pattern in patterns):
+        return
+    from cgt_calc.exceptions import ParsingError
+
+    raise ParsingError(
+        path,
+        f"'{path.name}' is not one of the reports this account takes. The parser "
+        f"identifies them by filename: save each export as {' or '.join(patterns)}.",
+    )
+
+
 def run_validate(job: dict) -> dict:
     from cgt_calc.parsers.freetrade import FreetradeParser
+    from cgt_calc.parsers.interactive_brokers import InteractiveBrokersParser
+    from cgt_calc.parsers.mssb import MSSBParser
     from cgt_calc.parsers.raw import RawParser
     from cgt_calc.parsers.schwab import AwardPrices, SchwabParser, _read_schwab_awards
     from cgt_calc.parsers.schwab_equity_award_json import SchwabEquityAwardsJSONParser
+    from cgt_calc.parsers.sharesight import SharesightParser
+    from cgt_calc.parsers.trading212 import Trading212Parser
+    from cgt_calc.parsers.vanguard import VanguardParser
 
     handler = _capture_warnings()
     path = Path(job["file"])
@@ -130,10 +229,23 @@ def run_validate(job: dict) -> dict:
             }
     elif account_type == "freetrade_gia":
         stats = _tx_stats(FreetradeParser.load_from_file(path))
+    elif account_type == "hl_fund_share":
+        stats = _validate_hl(path, warnings)
     elif account_type in ("raw_csv", "bank_generic"):
         stats = _tx_stats(RawParser.load_from_file(path))
     else:
-        raise ValueError(f"Unknown account type: {account_type}")
+        parsers = {
+            "interactive_brokers": InteractiveBrokersParser,
+            "morgan_stanley_awards": MSSBParser,
+            "sharesight": SharesightParser,
+            "trading212_invest": Trading212Parser,
+            "vanguard_gia": VanguardParser,
+        }
+        parser = parsers.get(account_type)
+        if parser is None:
+            raise ValueError(f"Unknown account type: {account_type}")
+        _check_required_filename(account_type, path)
+        stats = _tx_stats(parser.load_from_file(path))
 
     warnings.extend(handler.messages)
     return {"ok": True, **stats, "warnings": warnings}
@@ -433,6 +545,24 @@ def dividend_meta(transactions, converter) -> dict:
     return {k: {**v, "gross": str(v["gross"])} for k, v in out.items()}
 
 
+# What each key of a job's "files" is passed to cgt-calc as. engine.runner builds
+# the files under these keys; a `_dir` one is a directory of reports.
+FILE_FLAGS = {
+    "schwab": "--schwab-file",
+    "schwab_award": "--schwab-award-file",
+    "schwab_equity_award_json": "--schwab-equity-award-json",
+    "freetrade": "--freetrade-file",
+    "hl_dir": "--hl-dir",
+    "interactive_brokers": "--interactive-brokers-file",
+    "mssb_dir": "--mssb-dir",
+    "sharesight_dir": "--sharesight-dir",
+    "trading212_dir": "--trading212-dir",
+    "vanguard": "--vanguard-file",
+    "raw": "--raw-file",
+    "eri_raw": "--eri-raw-file",
+}
+
+
 def run_calculate(job: dict) -> dict:
     from cgt_calc import render_latex
     from cgt_calc.args_parser import create_parser
@@ -452,16 +582,8 @@ def run_calculate(job: dict) -> dict:
     os.chdir(job["work_dir"])  # pdflatex + any library relative writes land here
     handler = _capture_warnings()
 
-    flag_map = {
-        "schwab": "--schwab-file",
-        "schwab_award": "--schwab-award-file",
-        "schwab_equity_award_json": "--schwab-equity-award-json",
-        "freetrade": "--freetrade-file",
-        "raw": "--raw-file",
-        "eri_raw": "--eri-raw-file",
-    }
     argv = ["--year", str(job["tax_year"]), "--no-report"]
-    for key, flag in flag_map.items():
+    for key, flag in FILE_FLAGS.items():
         if job["files"].get(key):
             argv += [flag, job["files"][key]]
     argv += ["--exchange-rates-file", job["exchange_rates_file"]]

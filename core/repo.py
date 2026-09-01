@@ -274,7 +274,23 @@ def list_access() -> dict[str, list[dict]]:
 
 # ── Accounts ───────────────────────────────────────────────────────────────────
 
-ACCOUNT_TYPES = ("schwab_individual", "schwab_awards", "freetrade_gia", "bank_generic", "raw_csv")
+# Every broker cgt-calc has a parser for, plus the two generic escape hatches.
+# Adding one here also needs: export instructions (core.coverage.INSTRUCTIONS),
+# document-set assembly (engine.runner), a validate branch (engine.worker), and
+# a label in the UI (web/src/views/DocumentsView.tsx).
+ACCOUNT_TYPES = (
+    "schwab_individual",
+    "schwab_awards",
+    "freetrade_gia",
+    "hl_fund_share",
+    "interactive_brokers",
+    "morgan_stanley_awards",
+    "sharesight",
+    "trading212_invest",
+    "vanguard_gia",
+    "bank_generic",
+    "raw_csv",
+)
 
 
 def list_accounts(user_id: int) -> list[dict]:

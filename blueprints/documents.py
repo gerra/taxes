@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import shutil
 import uuid
 
 from flask import Blueprint, g, jsonify, request
@@ -13,6 +14,15 @@ from engine import runner
 _log = logging.getLogger(__name__)
 
 bp = Blueprint("documents", __name__)
+
+
+def _safe_basename(filename: str) -> str:
+    """The upload's own filename with any directory stripped. It is kept as sent,
+    spaces and all, rather than slugified: Morgan Stanley and Sharesight reports
+    are recognised by their exact names, and an HL contract note is matched to
+    its trade by the reference its filename starts with."""
+    name = os.path.basename(filename.replace("\\", "/")).strip()
+    return "upload" if name in ("", ".", "..") else name
 
 
 @bp.post("/api/accounts/<int:account_id>/documents")
@@ -29,14 +39,15 @@ def upload(account_id: int):
         return jsonify({"error": "Empty file"}), 400
     sha = hashlib.sha256(data).hexdigest()
 
-    tmp_path = os.path.join(paths.TMP_DIR, f"upload_{uuid.uuid4().hex}")
-    os.makedirs(paths.TMP_DIR, exist_ok=True)
+    tmp_dir = os.path.join(paths.TMP_DIR, f"upload_{uuid.uuid4().hex}")
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_path = os.path.join(tmp_dir, _safe_basename(file.filename))
     with open(tmp_path, "wb") as f:
         f.write(data)
     try:
         result = runner.validate_upload(account, tmp_path)
     finally:
-        os.unlink(tmp_path)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if result.get("needs_mapping"):
         _log.info(
@@ -68,7 +79,9 @@ def upload(account_id: int):
     doc = repo.create_document(
         g.user_id,
         account_id,
-        file.filename,
+        # Stored under the same name the parsers will see when the document set
+        # is rebuilt, so a directory broker's reports keep identifying themselves.
+        _safe_basename(file.filename),
         sha,
         len(data),
         result.get("tx_count", 0),

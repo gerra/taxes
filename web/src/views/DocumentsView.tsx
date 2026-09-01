@@ -19,6 +19,12 @@ const TYPE_LABELS: Record<AccountType, string> = {
   schwab_individual: 'Schwab — Individual brokerage',
   schwab_awards: 'Schwab — Equity Awards',
   freetrade_gia: 'Freetrade — GIA',
+  hl_fund_share: 'Hargreaves Lansdown — Fund & Share',
+  interactive_brokers: 'Interactive Brokers',
+  morgan_stanley_awards: 'Morgan Stanley at Work — equity awards',
+  sharesight: 'Sharesight — portfolio reports',
+  trading212_invest: 'Trading 212 — Invest',
+  vanguard_gia: 'Vanguard — General Account',
   bank_generic: 'Bank statement (interest)',
   raw_csv: 'Raw CSV (cgt-calc format)',
 }
@@ -79,7 +85,9 @@ export default function DocumentsView({
       <p className="muted">
         Upload export chunks until each account below shows <b>Complete</b>. Brokers cap how far
         back one export reaches — Schwab about four years, Freetrade twelve months — so several
-        files per account is normal, and they are stitched together here.
+        files per account is normal, and they are stitched together here. A few accounts want more
+        than transactions: Hargreaves Lansdown needs each trade's PDF contract note, and Morgan
+        Stanley and Sharesight name their reports, so upload those files unrenamed.
       </p>
       {checklist.needs.map((n, i) => (
         <div key={i} className="banner warn needs-banner">

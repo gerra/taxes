@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS access_requests (
 CREATE TABLE IF NOT EXISTS accounts (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id              INTEGER NOT NULL REFERENCES users(id),
-    type                 TEXT NOT NULL,  -- schwab_individual|schwab_awards|freetrade_gia|bank_generic|raw_csv
+    type                 TEXT NOT NULL,  -- see core.repo.ACCOUNT_TYPES
     name                 TEXT NOT NULL,
     first_activity_date  TEXT,           -- ISO date; start of required coverage
     created_at           TEXT NOT NULL DEFAULT (datetime('now'))

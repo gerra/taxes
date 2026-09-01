@@ -1,15 +1,20 @@
 """End-to-end engine test: real worker subprocess over a GBP-only raw fixture
-(GBP never triggers HMRC exchange-rate fetches, so no network is needed)."""
+(GBP never triggers HMRC exchange-rate fetches, so no network is needed), plus
+an upload validation per broker over the sanitised exports in tests/data/brokers.
+"""
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from decimal import Decimal
 
 import pytest
 
-from core import paths
+from core import coverage, paths
+
+BROKER_FIXTURES = os.path.join(os.path.dirname(__file__), "data", "brokers")
 
 _RAW = """date,action,symbol,quantity,price,fees,currency
 2023-04-10,TRANSFER,,1,2000,0,GBP
@@ -221,3 +226,97 @@ def test_bond_fund_distributions_are_taxed_as_interest_not_dividends(tmp_path):
     assert by_symbol["ULVR"]["currency"] == "GBP"
     assert by_symbol["ULVR"]["fx_rate"] == "1"
     assert Decimal(by_symbol["ULVR"]["gross"]) == 60
+
+
+# ── Upload validation, one broker at a time ───────────────────────────────────
+
+
+def _validate(account_type, filename, tmp_path, siblings=()):
+    """Validate one export the way an upload does: in a directory, under its own
+    name (which some parsers read) and beside the account's other documents."""
+    work = tmp_path / account_type
+    work.mkdir(parents=True, exist_ok=True)
+    for name in (*siblings, filename):
+        shutil.copyfile(os.path.join(BROKER_FIXTURES, name), work / name)
+    return _run_worker(
+        {"mode": "validate", "account_type": account_type, "file": str(work / filename)},
+        str(work),
+    )
+
+
+@pytest.mark.parametrize(
+    ("account_type", "filename", "tx_count", "date_min", "date_max"),
+    [
+        ("interactive_brokers", "interactive_brokers.csv", 13, "2025-01-01", "2025-11-30"),
+        ("trading212_invest", "trading212.csv", 7, "2024-01-01", "2024-05-26"),
+        ("vanguard_gia", "vanguard.csv", 17, "2022-03-08", "2022-10-02"),
+        ("morgan_stanley_awards", "Releases Report.csv", 2, "2021-03-25", "2023-03-25"),
+        ("morgan_stanley_awards", "Withdrawals Report.csv", 4, "2021-04-01", "2023-02-09"),
+        ("sharesight", "All Trades Report - Test.csv", 13, "2019-08-01", "2020-11-03"),
+    ],
+)
+def test_validate_broker_export(account_type, filename, tx_count, date_min, date_max, tmp_path):
+    result = _validate(account_type, filename, tmp_path)
+    assert result["ok"], result
+    assert result["tx_count"] == tx_count
+    assert (result["date_min"], result["date_max"]) == (date_min, date_max)
+    assert result["warnings"] == []
+
+
+def test_validate_rejects_a_report_the_parser_knows_only_by_name(tmp_path):
+    """Morgan Stanley picks a report's columns from its filename, so an export
+    saved under another name has to be refused rather than mis-parsed."""
+    result = _validate("morgan_stanley_awards", "trading212.csv", tmp_path)
+    assert not result["ok"]
+    assert "Releases Report.csv" in result["error"]["message"]
+
+
+def test_validate_hl_summary_without_its_contract_notes(tmp_path):
+    """The trades stay — their dates are real coverage — and the references
+    whose PDF is missing are named, in the shape core.coverage refreshes."""
+    result = _validate("hl_fund_share", "hl-transaction-summary.csv", tmp_path)
+    assert result["ok"], result
+    assert result["tx_count"] == 5
+    assert (result["date_min"], result["date_max"]) == ("2026-01-24", "2026-04-04")
+    (warning,) = result["warnings"]
+    assert warning.startswith(coverage.HL_MISSING_NOTES_PREFIX)
+    assert "B302087054" in warning and "S302087055" in warning
+
+
+def test_validate_hl_summary_beside_its_contract_notes(tmp_path):
+    result = _validate(
+        "hl_fund_share",
+        "hl-transaction-summary.csv",
+        tmp_path,
+        siblings=("B302087054_BOUGHT.pdf", "S302087055_SOLD.pdf"),
+    )
+    assert result["ok"], result
+    assert result["tx_count"] == 5
+    assert result["warnings"] == []
+
+
+def test_validate_hl_contract_note(tmp_path):
+    """A note prices a trade in the summary rather than adding one of its own."""
+    result = _validate("hl_fund_share", "B302087054_BOUGHT.pdf", tmp_path)
+    assert result["ok"], result
+    assert result["tx_count"] == 0
+    assert (result["date_min"], result["date_max"]) == ("2026-01-24", "2026-01-24")
+    assert result["warnings"] == []
+
+
+def test_validate_warns_about_a_contract_note_no_trade_can_match(tmp_path):
+    work = tmp_path / "hl"
+    work.mkdir()
+    shutil.copyfile(
+        os.path.join(BROKER_FIXTURES, "B302087054_BOUGHT.pdf"), work / "contract note.pdf"
+    )
+    result = _run_worker(
+        {
+            "mode": "validate",
+            "account_type": "hl_fund_share",
+            "file": str(work / "contract note.pdf"),
+        },
+        str(work),
+    )
+    assert result["ok"], result
+    assert "does not start with a trade reference" in result["warnings"][0]
